@@ -2,3 +2,6 @@ latex*/*
 .env
 Applications
 prompts.py
+__pycache__/
+*.py[cod]
+*.pyo
