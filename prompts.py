@@ -34,38 +34,76 @@ Source URL: {url}
 {visible_text}
 """
 
-summary_rewrite_prompt_template = """
-You are a resume rewriting agent. Your task is to write the candidate's profile summary
-so that it best matches the job description below — but only by rephrasing or reordering what
-already exists in the resume. Do NOT invent or exaggerate skills, tools, or responsibilities.
+cv_profile_summary_prompt_template = """
+You are a resume rewriting agent.
+
+Your task is to generate a concise LaTeX-formatted profile summary that best matches the job description below, 
+using only the information explicitly provided in the resume. You may paraphrase or reorder the facts, but:
+
+⚠️ Absolutely DO NOT:
+- Invent new skills, technologies, or tools not mentioned in the resume
+- Add or exaggerate work experience duration or job seniority
+- Fabricate certifications, roles, or responsibilities
 
 # Job Description
 {jd_text}
 
 # Resume Experience Highlights
-SAGA diagnostics a biomedical start up, 2023.11 - present
-full stuck developer
-- Built modular Flask blueprint-based systems for lab workflows at SAGA
-- Developed search pages and pagination using SQLAlchemy and PostgreSQL
+SAGA Diagnostics (biomedical startup) — Full Stack Developer (2023.11–present)
+- Built modular Flask blueprint systems for lab workflows
+- Developed search and pagination features with SQLAlchemy and PostgreSQL
 - Created RESTful APIs for ingesting validated bioinformatics data
-- Contributed Playwright-based E2E tests integrated into CI pipelines
-- Maintained Docker setups, deployed with GitLab CI/CD to AWS EC2
+- Contributed Playwright-based E2E tests and integrated CI coverage
+- Maintained Docker environments, deployed via GitLab CI/CD on AWS EC2
 
-Bionamic a SAAS start up focusing on LIMS for antibody discover, 2022.3 - 2023.10
-full stuck developer
-- At Bionamic, built OO-based Node.js tools for antibody research
-- Used Lit.js to build Web Components and interactive UIs
-- Created D3.js visualizations for biological data exploration
-- Used MongoDB with flexible schema and caching strategies
-- Worked on CI/CD in a containerized AWS setup
+Bionamic (SaaS company in antibody discovery) — Full Stack Developer (2022.3–2023.10)
+- Built OOP-based Node.js tools for antibody research
+- Created Web Components with Lit.js and visualizations with D3.js
+- Designed MongoDB schema and caching logic
+- Maintained CI/CD pipelines in containerized AWS setups
 
-- MSc in Bioinformatics (machine learning on biomedical data)
-- BSc in Biomedical Engineering with embedded systems experience
+Education:
+- MSc in Bioinformatics (focus: ML for biomedical data)
+- BSc in Biomedical Engineering (focus: embedded systems)
 
 # Output Instructions
-- Rewrite the profile summary to better match the job description.
-- The result must be under 300 characters (not words).
-- Highlight key skills, tools, and areas of strength using LaTeX format: wrap them in \\strong{{...}}.
-- Do not fabricate or exaggerate. Only use what is already in the resume.
-- Do not include quotation marks or markdown.
+- Generate a single-sentence profile summary under {max_length} characters (not words).
+- If unsure, output fewer words rather than risk exceeding the limit.
+- Wrap key skills and tools with LaTeX command \\strong{{...}}.
+- Do NOT add any content not already included in the resume.
+- Do NOT include quotation marks, markdown, or formatting outside LaTeX.
+- Output only the summary. Do not include any explanation or prefix.
+"""
+
+cover_letter_prompt_template = """
+You are a professional career assistant. Write a one-page plain text cover letter in English for the following job.
+
+# Target Job
+Title: {title}
+Company: {company}
+Job Description: {jd_text}
+candidate name: {name}
+
+# Candidate Profile
+- Full Stack Developer with 3 years of experience
+- Worked at SAGA Diagnostics and Bionamic
+- Skilled in Flask, React, PostgreSQL, MongoDB, Docker, AWS
+- Experience in bioinformatics and antibody research workflows
+- MSc in Bioinformatics (Lund University)
+- Strong testing experience with Playwright, Pytest, Jest
+
+# User Notes (optional)
+The user may provide extra notes or context in English or Chinese. Integrate them naturally if relevant.
+
+
+# Strict Writing Rules
+- Do NOT invent or exaggerate any experience, skills, or job titles.
+- Only use what is explicitly mentioned in the resume or notes.
+- Write in a warm, professional tone with strong motivation and alignment with the company.
+- The letter must be written in plain text format, no LaTeX or markdown.
+- Start with a greeting like "Dear {company} Team,"
+- End with "Respectfully submitted," followed by "Xu Chi"
+
+# Output Format
+Only return the plain text cover letter.
 """
