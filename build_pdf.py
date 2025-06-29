@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
+from prompts import jd_extraction_prompt_template, summary_rewrite_prompt_template
+
 
 # ==== 加载环境变量 ====
 load_dotenv()
@@ -29,41 +31,9 @@ def extract_jd_from_url_with_llm(url):
         lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
         visible_text = "\n".join(lines[:200])  # 限制长度
 
-        prompt = f"""
-You are a helpful assistant. You will be given the visible HTML text from a job listing.
-
-You will be given a raw HTML job listing content and its URL. Your task is to extract:
-1. The full Job Description text.
-2. The company name.
-3. The job title.
-If the content is not in English, translate it into English
-Output them in this format:
-
-### JD:
-(full job description)
-
-### Company:
-(company name)
-
-### Title:
-(job title)
-
-Only extract what's visible from the content or logically inferrable from the URL. If you cannot identify the content from the webpage, respond with:
-
-### JD:
-[FAILED]
-
-### Company:
-[UNKNOWN]
-
-### Title:
-[UNKNOWN]
-
----
-Source URL: {url}
-
-{visible_text}
-"""
+        prompt = jd_extraction_prompt_template.format(
+            url=url, visible_text=visible_text
+        )
         print("🤖 Calling model to extract JD information")
         response = client.chat.completions.create(
             model="mistralai/mistral-small-3.1-24b-instruct:free",
@@ -84,7 +54,9 @@ Source URL: {url}
 
         if jd == "[FAILED]":
             print("❌ Failed to fetch job page")
-            jd = input("❗Could not access URL. Please paste the job description manually:\n")
+            jd = input(
+                "❗Could not access URL. Please paste the job description manually:\n"
+            )
             company = input("Enter company name: ") or "Company"
             title = input("Enter job title: ") or "Job"
             return jd, company, title
@@ -94,7 +66,9 @@ Source URL: {url}
 
     except Exception as e:
         print(f"❌ Failed to fetch job page: {e}")
-        jd = input("❗Could not access URL. Please paste the job description manually:\n")
+        jd = input(
+            "❗Could not access URL. Please paste the job description manually:\n"
+        )
         company = input("Enter company name: ") or "Company"
         title = input("Enter job title: ") or "Job"
         return jd, company, title
@@ -111,36 +85,9 @@ def modify_tex(temp_dir, main_tex_file, jd_text):
     match = re.search(r"\\cvparagraph\{(.*?)\}", tex_text, flags=re.DOTALL)
     if not match:
         raise ValueError("❌ Could not find \\cvparagraph{...}")
-    current_summary = match.group(1).strip()
 
     # === 构造 prompt 并调用 OpenRouter ===
-    prompt = f"""
-You are a resume rewriting agent. Your task is to rewrite the candidate's profile summary
-so that it best matches the job description below — but only by rephrasing or reordering what
-already exists in the resume. Do NOT invent or exaggerate skills, tools, or responsibilities.
-
-# Job Description
-{jd_text}
-
-# Current Profile Summary
-{current_summary}
-
-# Other Resume Content
-The candidate is a full stack developer with 3 years of experience in:
-- Python, Flask, RESTful APIs, PostgreSQL
-- Frontend: React, HTMX, Bootstrap, Jinja2
-- DevOps: Docker, GitLab CI/CD, AWS
-- Scientific projects involving bioinformatics and antibody/protein data
-- Testing: Jest, Cypress, Pytest
-- Degree in Bioinformatics (MSc) and Biomedical Engineering (BSc)
-
-# Output Instructions
-- Rewrite the profile summary to better match the job description.
-- The result must be under 300 characters (not words).
-- Highlight key skills, tools, and areas of strength using LaTeX format: wrap them in \\strong{{...}}.
-- Do not fabricate or exaggerate. Only use what is already in the resume.
-- Do not include quotation marks or markdown.
-"""
+    prompt = summary_rewrite_prompt_template.format(jd_text=jd_text)
 
     response = client.chat.completions.create(
         model=os.getenv("OPENAI_MODEL"),
@@ -190,7 +137,9 @@ def compile_tex_project(source_dir, main_tex_file, out_dir, jd_text):
 
         # 拷贝输出 PDF
         # 🛠️ 创建输出目录（如果需要）
-        generated_pdf = os.path.join(temp_dir, os.path.splitext(main_tex_file)[0] + ".pdf")
+        generated_pdf = os.path.join(
+            temp_dir, os.path.splitext(main_tex_file)[0] + ".pdf"
+        )
         if os.path.exists(generated_pdf):
             shutil.copy(generated_pdf, os.path.join(out_dir, os.getenv("OUTPUT_CV")))
             print(f"✅ Compilation complete. PDF saved to: {out_dir}")
