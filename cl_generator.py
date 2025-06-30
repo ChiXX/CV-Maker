@@ -55,7 +55,8 @@ def write_cover_letter(client, temp_dir, main_tex_file, jd_text, company, title)
         jd_text=jd_text,
         company=company,
         title=title,
-        name=os.getenv("NAME")
+        name=os.getenv("NAME"),
+        user_notes="" 
     )
 
     response = client.chat.completions.create(
