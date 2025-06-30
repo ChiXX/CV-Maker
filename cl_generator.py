@@ -51,28 +51,8 @@ def write_cover_letter(client, temp_dir, main_tex_file, jd_text, company, title)
     with open(tex_path, "r", encoding="utf-8") as f:
         tex_text = f.read()
 
-    prompt = cover_letter_prompt_template.format(
-        jd_text=jd_text,
-        company=company,
-        title=title,
-        name=os.getenv("NAME"),
-        user_notes="" 
-    )
+    letter_body, formatted_letter = interactive_cover_letter_review(client, jd_text, company, title)
 
-    response = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL"),
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": prompt},
-        ],
-    )
-
-    letter_body = response.choices[0].message.content.strip()
-
-    formatted_paragraphs = [
-        line.strip() for line in letter_body.split("\n") if line.strip()
-    ]
-    formatted_letter = "\n\n\\vspace{0.5cm}\n\n".join(formatted_paragraphs)
 
     # Inject into tex content
     new_tex = tex_text.replace("% Inject here", formatted_letter)
@@ -80,3 +60,39 @@ def write_cover_letter(client, temp_dir, main_tex_file, jd_text, company, title)
         f.write(new_tex)
 
     return letter_body
+
+
+def interactive_cover_letter_review(client, jd_text, company, title):
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {
+            "role": "user",
+            "content": cover_letter_prompt_template.format(
+                jd_text=jd_text,
+                company=company,
+                title=title,
+                name=os.getenv("NAME"),
+                user_notes="",
+            ),
+        },
+    ]
+
+    while True:
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL"),
+            messages=messages,
+        )
+        letter_body = response.choices[0].message.content.strip()         
+
+        print("\n📄 Generated cover letter:")
+        print(letter_body)
+        user_input = input("\n📝 Press Enter to accept, or type suggestion: ").strip()
+        if not user_input:
+            formatted_paragraphs = [
+                line.strip() for line in letter_body.split("\n") if line.strip()
+            ]
+            formatted_letter = "\n\n\\vspace{0.5cm}\n\n".join(formatted_paragraphs)
+            return letter_body, formatted_letter
+
+        messages.append({"role": "assistant", "content": letter_body})
+        messages.append({"role": "user", "content": user_input})

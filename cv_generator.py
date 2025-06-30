@@ -55,28 +55,7 @@ def modify_tex(client, temp_dir, main_tex_file, jd_text):
         raise ValueError("❌ Could not find \\cvparagraph{...}")
 
     # === 构造 prompt 并调用 OpenRouter ===
-    MAX_LENGTH = 220
-    new_summary = ""
-    prompt = cv_profile_summary_prompt_template.format(
-        jd_text=jd_text, max_length=MAX_LENGTH
-    )
-    for _ in range(3):
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL"),
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt},
-            ],
-        )
-        candidate = response.choices[0].message.content.strip()
-
-        plain_text = re.sub(r"\\strong\{(.*?)\}", r"\1", candidate)
-
-        if len(plain_text) <= MAX_LENGTH + 30:
-            new_summary = candidate
-            break
-        else:
-            print(f"⚠️ Summary too long ({len(candidate)} chars), retrying...")
+    new_summary = interactive_summary_review(client, jd_text)
 
     # === 替换 LaTeX 内容 ===
     tex_text_updated = re.sub(
@@ -90,3 +69,43 @@ def modify_tex(client, temp_dir, main_tex_file, jd_text):
     with open(tex_path, "w", encoding="utf-8") as f:
         f.write(tex_text_updated)
 
+
+def interactive_summary_review(client, jd_text, max_length=220):
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant. Help refine the user's resume summary to match the job description, using only facts from their profile. Do NOT fabricate or exaggerate anything.",
+        },
+        {
+            "role": "user",
+            "content": cv_profile_summary_prompt_template.format(
+                jd_text=jd_text,
+                max_length=max_length,
+            ),
+        },
+    ]
+
+    while True:
+        for i in range(3):
+            response = client.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL"),
+                messages=messages,
+            )
+            candidate = response.choices[0].message.content.strip()
+
+            plain_text = re.sub(r"\\strong\{(.*?)\}", r"\1", candidate)
+
+            if len(plain_text) <= max_length + 30:
+                break
+
+        print("\n📄 Suggested Summary:")
+        print(plain_text)
+        print(f"\n📏 Length: {len(plain_text)} chars (max allowed: {max_length})")
+        user_input = input(
+            "\n📝 Press Enter to accept, or type suggestion: "
+        ).strip()
+        if not user_input:
+            return candidate
+
+        messages.append({"role": "assistant", "content": candidate})
+        messages.append({"role": "user", "content": user_input})
