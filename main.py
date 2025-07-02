@@ -17,7 +17,7 @@ client = OpenAI(
 
 
 if __name__ == "__main__":
-    url = input("🔗 请输入职位链接: ").strip()
+    url = input("🔗 Please paste the job link: ").strip()
     jd_text, company, title = extract_jd_from_url_with_llm(client, url)
     today = datetime.now().strftime("%Y-%m-%d")
     out_dir = os.path.join("Applications", f"{company}-{today}")
