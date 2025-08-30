@@ -20,10 +20,11 @@ if __name__ == "__main__":
     url = input("🔗 Please paste the job link: ").strip()
     jd_text, company, title = extract_jd_from_url_with_llm(client, url)
     today = datetime.now().strftime("%Y-%m-%d")
-    out_dir = os.path.join("Applications", f"{company}-{today}")
+    out_dir = os.path.join("Applications", f"{today}-{company}")
 
     os.makedirs(out_dir, exist_ok=True)
     jd_txt_path = os.path.join(out_dir, f"{title}.txt")
+    os.makedirs(os.path.dirname(jd_txt_path), exist_ok=True)
     with open(jd_txt_path, "w", encoding="utf-8") as f:
         f.write(jd_text)
 
