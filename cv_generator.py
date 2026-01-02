@@ -194,8 +194,8 @@ DETAILS: [specific feedback or confirmation]
             'verified': len(issues) == 0
         })
 
-        print(f"📄 Candidate Summary: {plain_text}")
-        print(f"📏 Length: {len(plain_text)} chars (max: {max_length})")
+        print(f"📄 Candidate Summary: {candidate}")
+        print(f"📏 Length: {len(candidate)} chars (max: {max_length})")
         print(f"🔍 Issues Found: {len(issues)}")
 
         if issues:
