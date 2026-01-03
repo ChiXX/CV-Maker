@@ -76,7 +76,7 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
     try {
       // Add analyzing message
       setTimeout(() => {
-        const analyzingHistory = [
+        const analyzingHistory: ChatMessage[] = [
           ...initialHistory,
           {
             role: 'assistant',
@@ -89,7 +89,7 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
 
       // Add tailoring message
       setTimeout(() => {
-        const tailoringHistory = [
+        const tailoringHistory: ChatMessage[] = [
           ...initialHistory,
           {
             role: 'assistant',
@@ -109,7 +109,7 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
       const result = await generateCoverLetter({ application_id: data.application.id });
 
       // Add success message
-      const finalHistory = [
+      const finalHistory: ChatMessage[] = [
         ...initialHistory,
         {
           role: 'assistant',
@@ -150,7 +150,7 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate cover letter';
       setError(errorMessage);
 
-      const errorHistory = [
+      const errorHistory: ChatMessage[] = [
         ...chatHistory,
         {
           role: 'assistant',
@@ -191,7 +191,7 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
     try {
       // Add analyzing message
       setTimeout(() => {
-        const analyzingHistory = [
+        const analyzingHistory: ChatMessage[] = [
           ...initialHistory,
           {
             role: 'assistant',
@@ -204,7 +204,7 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
 
       // Add tailoring message
       setTimeout(() => {
-        const tailoringHistory = [
+        const tailoringHistory: ChatMessage[] = [
           ...initialHistory,
           {
             role: 'assistant',
@@ -224,7 +224,7 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
       const result = await regenerateCoverLetter(data.application.id);
 
       // Add success message
-      const finalHistory = [
+      const finalHistory: ChatMessage[] = [
         ...initialHistory,
         {
           role: 'assistant',
@@ -265,7 +265,7 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
       const errorMessage = err instanceof Error ? err.message : 'Failed to regenerate cover letter';
       setError(errorMessage);
 
-      const errorHistory = [
+      const errorHistory: ChatMessage[] = [
         ...chatHistory,
         {
           role: 'assistant',

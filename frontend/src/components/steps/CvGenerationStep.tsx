@@ -71,7 +71,7 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
     try {
       // Add analyzing message
       setTimeout(() => {
-        const analyzingHistory = [
+        const analyzingHistory: ChatMessage[] = [
           ...initialHistory,
           {
             role: 'assistant',
@@ -86,7 +86,7 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
       const result = await generateCv({ application_id: data.application.id });
 
       // Add success message
-      const finalHistory = [
+      const finalHistory: ChatMessage[] = [
         ...initialHistory,
         {
           role: 'assistant',
@@ -123,7 +123,7 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate CV';
       setError(errorMessage);
 
-      const errorHistory = [
+      const errorHistory: ChatMessage[] = [
         ...chatHistory,
         {
           role: 'assistant',
@@ -164,7 +164,7 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
     try {
       // Add analyzing message
       setTimeout(() => {
-        const analyzingHistory = [
+        const analyzingHistory: ChatMessage[] = [
           ...initialHistory,
           {
             role: 'assistant',
@@ -179,7 +179,7 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
       const result = await regenerateCv(data.application.id);
 
       // Add success message
-      const finalHistory = [
+      const finalHistory: ChatMessage[] = [
         ...initialHistory,
         {
           role: 'assistant',
@@ -215,7 +215,7 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
       const errorMessage = err instanceof Error ? err.message : 'Failed to regenerate CV';
       setError(errorMessage);
 
-      const errorHistory = [
+      const errorHistory: ChatMessage[] = [
         ...chatHistory,
         {
           role: 'assistant',
