@@ -1,16 +1,17 @@
-FROM python:3.12-alpine
+FROM python:3.12-slim
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Install system dependencies
-RUN apk add --no-cache \
-    gcc \
-    musl-dev \
-    postgresql-client \
+# Install system dependencies including a minimal TeX Live set for pdflatex
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
     curl \
-    && rm -rf /var/cache/apk/*
+    texlive-latex-base \
+    texlive-fonts-recommended \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /app
@@ -28,8 +29,8 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY . .
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S app \
-    && adduser -u 1001 -S app -G app \
+RUN groupadd -g 1001 app \
+    && useradd -u 1001 -g app -m -s /bin/bash app \
     && chown -R app:app /app
 USER app
 

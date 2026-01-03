@@ -28,6 +28,23 @@ run:
 run-cv url:
     source .venv/bin/activate && echo "{{url}}" | python main.py
 
+# Frontend commands
+ui-up:
+    docker-compose -f docker-compose.dev.yml up frontend
+
+ui-down:
+    docker-compose -f docker-compose.dev.yml down frontend
+
+ui-logs:
+    docker-compose -f docker-compose.dev.yml logs -f frontend
+
+ui-restart:
+    docker-compose -f docker-compose.dev.yml restart frontend
+
+# Start both API and UI
+api-and-ui:
+    docker-compose -f docker-compose.dev.yml up api frontend
+
 # Docker development commands (with hot reload)
 dev-up:
     docker-compose -f docker-compose.dev.yml up

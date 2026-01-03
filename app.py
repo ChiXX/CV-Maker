@@ -13,6 +13,12 @@ from cl_generator import compile_cl_tex
 from jd_generator import extract_jd_from_url_with_llm
 from database import get_db_dependency, init_db, create_tables
 from models import Application
+from fastapi.responses import StreamingResponse
+import subprocess
+import tempfile
+import shutil
+import io
+from fastapi import Query
 
 # Load environment variables
 load_dotenv()
@@ -53,13 +59,255 @@ class JobApplicationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+class JobExtractionRequest(BaseModel):
+    job_url: str
+
+class JobExtractionResponse(BaseModel):
+    id: int
+    job_url: str
+    company: str
+    title: str
+    jd_text: str
+    created_at: datetime
+    updated_at: datetime
+
+class CvGenerationRequest(BaseModel):
+    application_id: int
+
+class CvGenerationResponse(BaseModel):
+    cv_latex: str
+
+class ClGenerationRequest(BaseModel):
+    application_id: int
+
+class ClGenerationResponse(BaseModel):
+    cl_latex: str
+
 class ApplicationListResponse(BaseModel):
     applications: List[JobApplicationResponse]
+
+
+class PdfCompileResponse(BaseModel):
+    detail: str
 
 # Startup event to initialize database
 @app.on_event("startup")
 async def startup_event():
     init_db()
+
+@app.post("/applications/extract", response_model=JobExtractionResponse)
+async def extract_job_details(
+    request: JobExtractionRequest,
+    db: Session = Depends(get_db_dependency)
+):
+    """
+    Extract job details from URL and create initial application record
+    """
+    try:
+        # Extract job description from URL
+        jd_text, company, title = extract_jd_from_url_with_llm(client, request.job_url)
+
+        # Create output directory
+        today = datetime.now().strftime("%Y-%m-%d")
+        out_dir = os.path.join("Applications", f"{today}-{company}")
+        os.makedirs(out_dir, exist_ok=True)
+
+        # Save JD text (sanitize title for filesystem safety)
+        import re as _re
+        safe_title = _re.sub(r'[\\/:"*?<>|]+', '_', title)
+        jd_txt_path = os.path.join(out_dir, f"{safe_title}.txt")
+        # Ensure parent dir exists (out_dir should exist already)
+        os.makedirs(os.path.dirname(jd_txt_path), exist_ok=True)
+        with open(jd_txt_path, "w", encoding="utf-8") as f:
+            f.write(jd_text)
+
+        # Create application record with only JD info
+        application = Application(
+            jb_url=request.job_url,
+            jd_text=jd_text,
+            company=company,
+            title=title,
+        )
+
+        # Save to database
+        db.add(application)
+        db.commit()
+        db.refresh(application)
+
+        return JobExtractionResponse(
+            id=application.id,
+            job_url=application.jb_url,
+            company=application.company,
+            title=application.title,
+            jd_text=application.jd_text,
+            created_at=application.created_at,
+            updated_at=application.updated_at
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to extract job details: {str(e)}")
+
+@app.put("/applications/{application_id}/extract", response_model=JobExtractionResponse)
+async def regenerate_job_details(
+    application_id: int,
+    db: Session = Depends(get_db_dependency)
+):
+    """
+    Regenerate job details for an existing application
+    """
+    try:
+        # Get existing application
+        application = db.query(Application).filter(Application.id == application_id).first()
+        if not application:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        # Re-extract job description from URL
+        jd_text, company, title = extract_jd_from_url_with_llm(client, application.jb_url)
+
+        # Update output directory and file
+        today = datetime.now().strftime("%Y-%m-%d")
+        out_dir = os.path.join("Applications", f"{today}-{company}")
+        os.makedirs(out_dir, exist_ok=True)
+
+        # Save updated JD text (sanitize title for filesystem safety)
+        import re as _re
+        safe_title = _re.sub(r'[\\/:"*?<>|]+', '_', title)
+        jd_txt_path = os.path.join(out_dir, f"{safe_title}.txt")
+        os.makedirs(os.path.dirname(jd_txt_path), exist_ok=True)
+        with open(jd_txt_path, "w", encoding="utf-8") as f:
+            f.write(jd_text)
+
+        # Update application record
+        application.jd_text = jd_text
+        application.company = company
+        application.title = title
+        # Clear CV and CL since JD changed
+        application.cv_latex = None
+        application.cl_latex = None
+
+        db.commit()
+        db.refresh(application)
+
+        return JobExtractionResponse(
+            id=application.id,
+            job_url=application.jb_url,
+            company=application.company,
+            title=application.title,
+            jd_text=application.jd_text,
+            created_at=application.created_at,
+            updated_at=application.updated_at
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to regenerate job details: {str(e)}")
+
+
+ 
+
+
+@app.post("/applications/{application_id}/cv", response_model=CvGenerationResponse)
+async def generate_cv(
+    application_id: int,
+    db: Session = Depends(get_db_dependency)
+):
+    """
+    Generate CV LaTeX for an existing application
+    """
+    try:
+        # Get application
+        application = db.query(Application).filter(Application.id == application_id).first()
+        if not application:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        # Generate CV LaTeX
+        cv_latex = compile_cv_tex(client, application.jd_text)
+
+        # Update application
+        application.cv_latex = cv_latex
+        db.commit()
+
+        return CvGenerationResponse(cv_latex=cv_latex)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate CV: {str(e)}")
+
+@app.put("/applications/{application_id}/cv", response_model=CvGenerationResponse)
+async def regenerate_cv(
+    application_id: int,
+    db: Session = Depends(get_db_dependency)
+):
+    """
+    Regenerate CV LaTeX for an existing application
+    """
+    try:
+        # Get application
+        application = db.query(Application).filter(Application.id == application_id).first()
+        if not application:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        # Regenerate CV LaTeX
+        cv_latex = compile_cv_tex(client, application.jd_text)
+
+        # Update application
+        application.cv_latex = cv_latex
+        db.commit()
+
+        return CvGenerationResponse(cv_latex=cv_latex)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to regenerate CV: {str(e)}")
+
+@app.post("/applications/{application_id}/cl", response_model=ClGenerationResponse)
+async def generate_cover_letter(
+    application_id: int,
+    db: Session = Depends(get_db_dependency)
+):
+    """
+    Generate cover letter LaTeX for an existing application
+    """
+    try:
+        # Get application
+        application = db.query(Application).filter(Application.id == application_id).first()
+        if not application:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        # Generate CL LaTeX
+        cl_latex = compile_cl_tex(client, application.jd_text, application.company, application.title)
+
+        # Update application
+        application.cl_latex = cl_latex
+        db.commit()
+
+        return ClGenerationResponse(cl_latex=cl_latex)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate cover letter: {str(e)}")
+
+@app.put("/applications/{application_id}/cl", response_model=ClGenerationResponse)
+async def regenerate_cover_letter(
+    application_id: int,
+    db: Session = Depends(get_db_dependency)
+):
+    """
+    Regenerate cover letter LaTeX for an existing application
+    """
+    try:
+        # Get application
+        application = db.query(Application).filter(Application.id == application_id).first()
+        if not application:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        # Regenerate CL LaTeX
+        cl_latex = compile_cl_tex(client, application.jd_text, application.company, application.title)
+
+        # Update application
+        application.cl_latex = cl_latex
+        db.commit()
+
+        return ClGenerationResponse(cl_latex=cl_latex)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to regenerate cover letter: {str(e)}")
 
 @app.post("/applications/", response_model=JobApplicationResponse)
 async def create_application(
@@ -78,8 +326,11 @@ async def create_application(
         out_dir = os.path.join("Applications", f"{today}-{company}")
         os.makedirs(out_dir, exist_ok=True)
 
-        # Save JD text
-        jd_txt_path = os.path.join(out_dir, f"{title}.txt")
+        # Save JD text (sanitize title for filesystem safety)
+        import re as _re
+        safe_title = _re.sub(r'[\\/:"*?<>|]+', '_', title)
+        jd_txt_path = os.path.join(out_dir, f"{safe_title}.txt")
+        os.makedirs(os.path.dirname(jd_txt_path), exist_ok=True)
         with open(jd_txt_path, "w", encoding="utf-8") as f:
             f.write(jd_text)
 
