@@ -61,7 +61,7 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code (exclude heavy files)
-COPY app.py cl_generator.py cv_generator.py jd_generator.py database.py models.py ./
+COPY app.py cl_generator.py cv_generator.py jd_generator.py database.py models.py prompts.py ./
 COPY latex_cl/ ./latex_cl/
 COPY latex_cv/ ./latex_cv/
 
