@@ -1,26 +1,20 @@
-# Frontend Dockerfile for development
-FROM node:20.11-alpine
-
-# Install dependencies
-RUN apk add --no-cache libc6-compat
-
+FROM node:20.11-alpine AS builder
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci
-
-# Copy source code
 COPY . .
 
-# Expose port
+RUN npm run build 
+
+FROM node:20.11-alpine
+WORKDIR /app
+
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/node_modules ./node_modules
+
 EXPOSE 3000
+ENV NODE_ENV=production
 
-# Set environment variables
-ENV NEXT_PUBLIC_API_URL=http://api:8000
-ENV NODE_ENV=development
-
-# Start development server
-CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0"]
+CMD ["npm", "start"]
