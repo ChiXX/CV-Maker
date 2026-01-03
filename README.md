@@ -1,37 +1,36 @@
-# 🧠 Auto CV Generator
+# 🧠 CV Maker - Auto CV Generator
 
-Automatically customize your LaTeX CV based on a job listing URL. This tool extracts job descriptions using a free LLM (via OpenRouter), rewrites your profile summary to match the role, and compiles the final PDF resume using `pdflatex`. Now includes database storage for tracking applications.
+Automatically customize your LaTeX CV based on a job listing URL. This tool extracts job descriptions using AI, rewrites your profile summary to match the role, and generates LaTeX source files stored in a database. Now built as a FastAPI application for programmatic access and easy integration.
 
 ## ✅ Features
 
-- Extracts job description, company, and title from a given URL
-- Rewrites your CV summary using only the content from your existing resume
-- Outputs a job-targeted PDF named `CV-{name}.pdf` and saves the JD as a `.txt` file
-- All output stored in `Applications/{Company}-{Date}/`
-- **NEW**: Stores application data and generated PDFs in PostgreSQL database
+- **FastAPI Backend**: RESTful API for job application processing and management
+- **AI-Powered Extraction**: Extracts job description, company, and title from URLs using OpenAI
+- **Custom CV Generation**: Rewrites your CV summary using only content from your existing resume
+- **LaTeX Generation**: Generates job-targeted LaTeX source files for CVs and cover letters
+- **Database Storage**: Stores application data and generated LaTeX in PostgreSQL
+- **RESTful Endpoints**: Programmatic access to create, read, and manage applications
+- **Automatic Documentation**: Built-in API documentation with Swagger UI
 
 ## 🛠️ Requirements
 
-- Python 3.8+
-- `pdflatex` installed
+- Python 3.12+
 - Docker (for PostgreSQL database)
 - `just` command runner (optional, for easier command management)
-- Dependencies:
-  - `openai`
-  - `python-dotenv`
-  - `beautifulsoup4`
-  - `requests`
-  - `sqlalchemy`
-  - `psycopg2-binary`
+- OpenAI API access for job description extraction and content generation
 
-Install Python dependencies:
-
+### Python Dependencies
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-Install `just` command runner (optional):
+### Frontend Dependencies
+```bash
+cd frontend && npm install
+```
 
+### Optional Tools
+Install `just` command runner:
 ```bash
 # On Ubuntu/Debian
 sudo apt install just
@@ -66,51 +65,104 @@ cp env.example .env
 
 Then edit `.env` with your actual configuration values.
 
-## 🚀 Quick Start with Just (Recommended)
+## 🌐 Web Interface
 
-If you have `just` installed, use these simple commands:
+The web interface provides a modern UI for:
+- **Job URL Input**: Submit job posting URLs through a clean form
+- **Real-time Chat**: Monitor extraction and generation progress
+- **LaTeX Downloading**: Download generated LaTeX source files for CVs and cover letters
+- **Application History**: Browse all your generated applications
+
+### Architecture
+- **Frontend**: Next.js 14 with TypeScript and Tailwind CSS
+- **Backend**: FastAPI with background task processing
+- **Database**: PostgreSQL for application storage
+- **LaTeX Generation**: LaTeX templates with AI-customized content
+
+### API Endpoints
+- `POST /applications/` - Create new application from job URL
+- `GET /applications/` - List all applications with pagination
+- `GET /applications/{id}` - Get specific application details
+- `DELETE /applications/{id}` - Delete an application
+- `GET /docs` - Interactive API documentation (Swagger UI)
+- `GET /redoc` - Alternative API documentation
+
+## 🚀 Quick Start
+
+### FastAPI Server
+Start the FastAPI application:
 
 ```bash
-# Complete setup (database + dependencies)
-just dev-setup
+# Install dependencies
+uv sync
 
-# Run the application
-just run
+# Start PostgreSQL database
+docker-compose up -d
 
-# Or run with a specific job URL
-just run-cv "https://example.com/job-url"
+# Initialize database
+python init_db.py
+
+# Start the FastAPI server
+python app.py
+
+# Or using the script entry point
+cv-maker
+
+# Access API docs at http://localhost:8000/docs
+```
+
+### API Usage Example
+```bash
+# Create a new application
+curl -X POST "http://localhost:8000/applications/" \
+  -H "Content-Type: application/json" \
+  -d '{"job_url": "https://example.com/job-posting"}'
+
+# List all applications
+curl "http://localhost:8000/applications/"
 ```
 
 ## 📋 Available Just Commands
 
-- `just` - Show all available commands
-- `just dev-setup` - Full development environment setup
-- `just run` - Start the CV generator
+### Full Stack Commands
+- `just stack-up` - Start all services (database, API, frontend)
+- `just stack-down` - Stop all services
+- `just stack-logs` - View logs from all services
+
+### Development Commands
+- `just dev-setup` - Full development environment setup (Python + DB)
+- `just frontend-install` - Install frontend dependencies
+- `just frontend-dev` - Start frontend development server
+- `just frontend-build` - Build frontend for production
+
+### CLI Commands
+- `just run` - Start the CLI CV generator
 - `just run-cv <url>` - Generate CV for specific job URL
+- `just api-run` - Start the API server only
+
+### Database Commands
 - `just db-start` - Start PostgreSQL database
 - `just db-stop` - Stop database
 - `just db-init` - Initialize database tables
-- `just status` - Show current setup status
+- `just db-logs` - View database logs
 
-## How to start
+### Utility Commands
+- `just status` - Show current setup status
+- `just sync` - Sync Python dependencies with uv
+- `just clean` - Clean up generated files and cache
+
+## 🚀 Running the Application
 
 ```bash
-python main.py
+# Start the FastAPI server
+python app.py
+
+# Server will be available at http://localhost:8000
+# API documentation at http://localhost:8000/docs
 ```
 
-Expected output:
-```
-🔗 请输入职位链接: https://bli.b3.se/jobs/932081-senior-system-developer?utm_source=LinkedIn
-🌐 Fetching job page content: https://bli.b3.se/jobs/932081-senior-system-developer?utm_source=LinkedIn
-🤖 Calling model to extract JD information
-✅ Extraction completed → Company: B3 Consulting Group, Title: Senior System Developer
-📁 Copying LaTeX project into temporary directory: /tmp/tmpezdjbi84
-✍️ Summary updated in LaTeX file
-This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2022/dev/Debian) (preloaded format=pdflatex)
- restricted \write18 enabled.
-entering extended mode
-✅ Compilation complete. PDF saved to: Applications/B3 Consulting Group-2025-06-28
-```
+### API Usage
+Use the interactive API documentation at `/docs` or make direct API calls to create applications from job URLs. The API will extract job descriptions, generate customized LaTeX content, and store everything in the database.
 
 
 Example:

@@ -1,9 +1,7 @@
 import os
 import re
-import subprocess
-import shutil
-import tempfile
 from prompts import cover_letter_prompt_template
+import sys
 
 # Resume content for verification (source of truth)
 resume_skills = {
@@ -61,61 +59,28 @@ def verify_cover_letter(letter_text):
     return issues
 
 
-def compile_cl_tex(client, out_dir, jd_text, company, title):
-    source_dir = "./latex_cl"
-    main_tex_file = "sample.tex"
-    os.makedirs(out_dir, exist_ok=True)
-    print("✍️ Writing CL")
+def compile_cl_tex(client, jd_text, company, title):
+    main_tex_file = "./latex_cl/sample.tex"
+    print("✍️ Generating CL LaTeX")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # 拷贝所有内容到临时目录
-        for item in os.listdir(source_dir):
-            s = os.path.join(source_dir, item)
-            d = os.path.join(temp_dir, item)
-            if os.path.isdir(s):
-                shutil.copytree(s, d)
-            else:
-                shutil.copy2(s, d)
+    letter, latex_content = write_cover_letter(
+        client, main_tex_file, jd_text, company, title
+    )
 
-        letter = write_cover_letter(
-            client, temp_dir, main_tex_file, jd_text, company, title
-        )
-        letter_txt_path = os.path.join(out_dir, "cover_letter.txt")
-        with open(letter_txt_path, "w", encoding="utf-8") as f:
-            f.write(letter)
-
-        # 编译主 tex 文件
-        subprocess.run(
-            ["pdflatex", "-interaction=batchmode", main_tex_file], cwd=temp_dir
-        )
-
-        # 拷贝输出 PDF
-        # 🛠️ 创建输出目录（如果需要）
-        generated_pdf = os.path.join(
-            temp_dir, os.path.splitext(main_tex_file)[0] + ".pdf"
-        )
-        if os.path.exists(generated_pdf):
-            shutil.copy(generated_pdf, os.path.join(out_dir, os.getenv("OUTPUT_CL")))
-            print(f"✅ Compilation complete. CL saved to: {out_dir}")
-        else:
-            raise FileNotFoundError("❌ Failed to generate PDF")
+    print("✅ CL LaTeX generated successfully")
+    return latex_content
 
 
-def write_cover_letter(client, temp_dir, main_tex_file, jd_text, company, title):
-    tex_path = os.path.join(temp_dir, main_tex_file)
-
-    with open(tex_path, "r", encoding="utf-8") as f:
+def write_cover_letter(client, main_tex_file, jd_text, company, title):
+    with open(main_tex_file, "r", encoding="utf-8") as f:
         tex_text = f.read()
 
     letter_body, formatted_letter = interactive_cover_letter_review(client, jd_text, company, title)
 
-
     # Inject into tex content
     new_tex = tex_text.replace("% Inject here", formatted_letter)
-    with open(tex_path, "w", encoding="utf-8") as f:
-        f.write(new_tex)
 
-    return letter_body
+    return letter_body, new_tex
 
 
 def interactive_cover_letter_review(client, jd_text, company, title):
@@ -138,7 +103,8 @@ def interactive_cover_letter_review(client, jd_text, company, title):
     ]
 
     review_history = []
-    max_review_attempts = 5
+    max_review_attempts = 3
+    letter_body = ""  # Initialize to avoid NameError if all attempts fail
 
     for attempt in range(max_review_attempts):
         print(f"\n🔄 Review Loop {attempt + 1}/{max_review_attempts}")
@@ -172,7 +138,13 @@ def interactive_cover_letter_review(client, jd_text, company, title):
         else:
             print("✅ Verification Passed!")
 
-        user_input = input("\n📝 Press Enter to accept, or type suggestion: ").strip()
+        # If running in a non-interactive environment (e.g. Docker container / background task),
+        # automatically accept the generated letter. Otherwise prompt the user.
+        if sys.stdin is None or not sys.stdin.isatty():
+            user_input = ""
+            print("\nℹ️ Non-interactive environment detected — automatically accepting the cover letter.")
+        else:
+            user_input = input("\n📝 Press Enter to accept, or type suggestion: ").strip()
 
         # Step 3: If accepted, return the result
         if not user_input:
@@ -192,8 +164,11 @@ def interactive_cover_letter_review(client, jd_text, company, title):
             print(f"🔧 Feedback received, regenerating...")
             review_history[-1]['feedback'] = user_input
 
-    # If all attempts used, return the last letter with warning
+    # If all attempts used, return the last letter with warning or raise error if no letter was generated
     print("⚠️  Maximum review attempts reached. Returning last version.")
+    if not letter_body:
+        raise Exception("Failed to generate cover letter after maximum attempts. Please check OpenAI API configuration and try again.")
+
     formatted_paragraphs = [
         line.strip() for line in letter_body.split("\n") if line.strip()
     ]

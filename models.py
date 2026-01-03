@@ -13,8 +13,8 @@ class Application(Base):
     jd_text = Column(Text, nullable=False)
     company = Column(String, nullable=False)
     title = Column(String, nullable=False)
-    cv_pdf = Column(LargeBinary, nullable=True)
-    cl_pdf = Column(LargeBinary, nullable=True)
+    cv_latex = Column(Text, nullable=True)
+    cl_latex = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

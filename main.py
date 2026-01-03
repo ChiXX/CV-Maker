@@ -1,7 +1,5 @@
-import os
 from openai import OpenAI
 
-from datetime import datetime
 from dotenv import load_dotenv
 from cv_generator import compile_cv_tex
 from cl_generator import compile_cl_tex
@@ -24,44 +22,20 @@ if __name__ == "__main__":
 
     url = input("🔗 Please paste the job link: ").strip()
     jd_text, company, title = extract_jd_from_url_with_llm(client, url)
-    today = datetime.now().strftime("%Y-%m-%d")
-    out_dir = os.path.join("Applications", f"{today}-{company}")
 
-    os.makedirs(out_dir, exist_ok=True)
-    jd_txt_path = os.path.join(out_dir, f"{title}.txt")
-    os.makedirs(os.path.dirname(jd_txt_path), exist_ok=True)
-    with open(jd_txt_path, "w", encoding="utf-8") as f:
-        f.write(jd_text)
+    # Generate LaTeX content (no file operations)
+    cv_latex = compile_cv_tex(client, jd_text)
+    cl_latex = compile_cl_tex(client, jd_text, company, title)
 
-    # Generate PDFs
-    compile_cv_tex(client, out_dir, jd_text)
-    compile_cl_tex(client, out_dir, jd_text, company, title)
-
-    # Read PDF files and save to database
+    # Create application record with LaTeX content
     db = get_db()
-
-    # Read CV PDF
-    cv_pdf_path = os.path.join(out_dir, os.getenv("OUTPUT_CV"))
-    cv_pdf_data = None
-    if os.path.exists(cv_pdf_path):
-        with open(cv_pdf_path, "rb") as f:
-            cv_pdf_data = f.read()
-
-    # Read Cover Letter PDF
-    cl_pdf_path = os.path.join(out_dir, os.getenv("OUTPUT_CL"))
-    cl_pdf_data = None
-    if os.path.exists(cl_pdf_path):
-        with open(cl_pdf_path, "rb") as f:
-            cl_pdf_data = f.read()
-
-    # Create application record
     application = Application(
         jb_url=url,
         jd_text=jd_text,
         company=company,
         title=title,
-        cv_pdf=cv_pdf_data,
-        cl_pdf=cl_pdf_data
+        cv_latex=cv_latex,
+        cl_latex=cl_latex
     )
 
     # Save to database
@@ -70,5 +44,7 @@ if __name__ == "__main__":
     db.refresh(application)
 
     print(f"✅ Application saved to database with ID: {application.id}")
+    print(f"   📄 CV LaTeX: {len(cv_latex)} characters")
+    print(f"   📄 CL LaTeX: {len(cl_latex)} characters")
 
     db.close()

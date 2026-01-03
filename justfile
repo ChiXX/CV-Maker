@@ -28,6 +28,26 @@ run:
 run-cv url:
     source .venv/bin/activate && echo "{{url}}" | python main.py
 
+# Docker development commands (with hot reload)
+dev-up:
+    docker-compose -f docker-compose.dev.yml up
+
+dev-down:
+    docker-compose -f docker-compose.dev.yml down
+
+dev-logs:
+    docker-compose -f docker-compose.dev.yml logs -f api
+
+dev-restart:
+    docker-compose -f docker-compose.dev.yml restart api
+
+# Production mode
+prod-up:
+    docker-compose up -d
+
+prod-down:
+    docker-compose down
+
 # Development commands
 install:
     pip install -r requirements.txt
@@ -53,8 +73,16 @@ status:
     @echo "=== Database Status ==="
     @docker ps | grep cv_maker_db || echo "Database not running"
     @echo ""
+    @echo "=== Development Status ==="
+    @docker ps | grep cv_maker_api_dev || echo "Development API not running"
+    @echo ""
     @echo "=== Environment ==="
-    @ls -la .env || echo ".env file not found"
+    @ls -la .env 2>/dev/null || echo ".env file not found"
     @echo ""
     @echo "=== Recent Applications ==="
     @ls -la Applications/ 2>/dev/null || echo "No applications directory"
+
+# Development workflow
+dev-test:
+    @echo "Testing development API..."
+    @curl -s http://localhost:8000/ | head -c 50 || echo "API not responding"

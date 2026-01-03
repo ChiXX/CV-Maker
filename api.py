@@ -34,8 +34,8 @@ if __name__ == "__main__":
         f.write(jd_text)
 
     # Generate LaTeX
-    cv_latex = compile_cv_tex(client, out_dir, jd_text)
-    cl_latex = compile_cl_tex(client, out_dir, jd_text, company, title)
+    cv_latex = compile_cv_tex(client, jd_text)
+    cl_latex = compile_cl_tex(client, jd_text, company, title)
 
     # Create application record
     db = get_db()

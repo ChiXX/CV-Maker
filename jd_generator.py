@@ -1,3 +1,4 @@
+import os
 import re
 import requests
 from bs4 import BeautifulSoup
@@ -22,7 +23,7 @@ def extract_jd_from_url_with_llm(client, url):
         )
         print("🤖 Calling model to extract JD information")
         response = client.chat.completions.create(
-            model="mistralai/mistral-small-3.1-24b-instruct:free",
+            model=os.getenv("OPENAI_MODEL"),
             messages=[{"role": "user", "content": prompt}],
         )
         content = response.choices[0].message.content
@@ -39,22 +40,10 @@ def extract_jd_from_url_with_llm(client, url):
             title = match_tt.group(1).strip()
 
         if jd == "[FAILED]":
-            print("❌ Failed to fetch job page")
-            jd = input(
-                "❗Could not access URL. Please paste the job description manually:\n"
-            )
-            company = input("Enter company name: ") or "Company"
-            title = input("Enter job title: ") or "Job"
-            return jd, company, title
+            raise Exception("Failed to extract job description from URL. The page may not be accessible or may require manual review.")
 
         print(f"✅ Extraction completed → Company: {company}, Title: {title}")
         return jd, company, title
 
     except Exception as e:
-        print(f"❌ Failed to fetch job page: {e}")
-        jd = input(
-            "❗Could not access URL. Please paste the job description manually:\n"
-        )
-        company = input("Enter company name: ") or "Company"
-        title = input("Enter job title: ") or "Job"
-        return jd, company, title
+        raise Exception(f"Failed to fetch job page: {str(e)}. Please verify the URL is accessible.")
