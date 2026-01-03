@@ -1,14 +1,12 @@
-# 阶段 1: 构建
+# syntax=docker/dockerfile:1
 FROM node:20.11-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-# 限制内存使用
 ENV NODE_OPTIONS="--max-old-space-size=512"
 RUN npm ci
 COPY . .
 RUN npm run build
 
-# 阶段 2: 运行
 FROM node:20.11-alpine
 WORKDIR /app
 COPY --from=builder /app/package*.json ./
@@ -18,5 +16,4 @@ COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 3000
 ENV NODE_ENV=production
-# 生产模式启动
 CMD ["npm", "start"]

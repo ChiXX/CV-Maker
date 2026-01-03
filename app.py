@@ -20,7 +20,7 @@ import tempfile
 import shutil
 import io
 from fastapi import Query
-from fpdf import FPDF
+import pdfkit
 
 # Load environment variables
 load_dotenv()
@@ -114,14 +114,6 @@ async def extract_job_details(
         out_dir = os.path.join("Applications", f"{today}-{company}")
         os.makedirs(out_dir, exist_ok=True)
 
-        # Save JD text (sanitize title for filesystem safety)
-        import re as _re
-        safe_title = _re.sub(r'[\\/:"*?<>|]+', '_', title)
-        jd_txt_path = os.path.join(out_dir, f"{safe_title}.txt")
-        # Ensure parent dir exists (out_dir should exist already)
-        os.makedirs(os.path.dirname(jd_txt_path), exist_ok=True)
-        with open(jd_txt_path, "w", encoding="utf-8") as f:
-            f.write(jd_text)
 
         # Create application record with only JD info
         application = Application(
@@ -220,9 +212,9 @@ async def generate_cv(
         application = db.query(Application).filter(Application.id == application_id).first()
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
-
+        
         # Generate CV LaTeX
-        cv_latex = compile_cv_tex(client, application.jd_text)
+        cv_latex, _ = compile_cv_tex(client, application.jd_text)
 
         # Update application
         application.cv_latex = cv_latex
@@ -274,7 +266,7 @@ async def generate_cover_letter(
             raise HTTPException(status_code=404, detail="Application not found")
 
         # Generate CL LaTeX
-        cl_latex = compile_cl_tex(client, application.jd_text, application.company, application.title)
+        cl_latex, _ = compile_cl_tex(client, application.jd_text, application.company, application.title, application.cv_latex)
 
         # Update application
         application.cl_latex = cl_latex
@@ -300,7 +292,7 @@ async def regenerate_cover_letter(
             raise HTTPException(status_code=404, detail="Application not found")
 
         # Regenerate CL LaTeX
-        cl_latex = compile_cl_tex(client, application.jd_text, application.company, application.title)
+        cl_latex, _ = compile_cl_tex(client, application.jd_text, application.company, application.title, application.cv_latex)
 
         # Update application
         application.cl_latex = cl_latex
@@ -338,7 +330,7 @@ async def create_application(
 
         # Generate LaTeX content (directly to database)
         cv_latex = compile_cv_tex(client, jd_text)
-        cl_latex = compile_cl_tex(client, jd_text, company, title)
+        cl_latex, _ = compile_cl_tex(client, jd_text, company, title, cv_latex)
 
         # Create application record
         application = Application(
@@ -445,8 +437,11 @@ async def compile_pdf(
         raise HTTPException(status_code=400, detail=f"No {target.upper()} content found")
 
     try:
-        # Generate PDF using FPDF
-        pdf_data = latex_to_pdf(latex_content, target, application.company, application.title)
+        # Convert LaTeX to simple HTML (basic conversion for demo)
+        html_content = latex_to_html(latex_content)
+
+        # Generate PDF using wkhtmltopdf
+        pdf_data = pdfkit.from_string(html_content, False)
 
         # Return PDF as streaming response
         return StreamingResponse(
@@ -459,46 +454,46 @@ async def compile_pdf(
         raise HTTPException(status_code=500, detail=f"PDF compilation failed: {str(e)}")
 
 
-def latex_to_pdf(latex_content: str, doc_type: str, company: str, title: str) -> bytes:
+def latex_to_html(latex_content: str) -> str:
     """
-    Convert LaTeX content to PDF using FPDF
-    This is a simplified converter for CV/Cover Letter
+    Basic LaTeX to HTML converter for CV/Cover Letter
+    This is a simplified converter - in production you'd want a more robust solution
     """
-    pdf = FPDF()
-    pdf.add_page()
+    # Basic HTML template
+    html_template = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
+            .cv-paragraph {{ margin: 20px 0; }}
+            .section {{ margin: 30px 0; }}
+            h1, h2, h3 {{ color: #333; }}
+            .contact {{ margin-bottom: 20px; }}
+        </style>
+    </head>
+    <body>
+        {content}
+    </body>
+    </html>
+    """
 
-    # Set font
-    pdf.set_font("Arial", size=12)
-
-    # Add title
-    pdf.set_font("Arial", style="B", size=16)
-    title_text = f"{doc_type.upper()}: {company} - {title}"
-    pdf.cell(200, 10, txt=title_text, ln=True, align='C')
-    pdf.ln(10)
-
-    # Reset font for content
-    pdf.set_font("Arial", size=11)
-
-    # Basic LaTeX to text conversion
+    # Basic LaTeX to HTML conversion
     content = latex_content
 
-    # Remove LaTeX commands and convert to plain text
-    content = re.sub(r'\\[a-zA-Z]+\{([^}]*)\}', r'\1', content)  # Keep content inside braces
-    content = re.sub(r'\\[a-zA-Z]+', '', content)  # Remove other LaTeX commands
-    content = content.replace('{', '').replace('}', '')  # Remove braces
-    content = re.sub(r'\s+', ' ', content)  # Normalize whitespace
+    # Convert basic LaTeX commands to HTML
+    content = content.replace('\\cvparagraph{', '<div class="cv-paragraph">')
+    content = content.replace('}', '</div>')
+    content = content.replace('\\section{', '<h2>')
+    content = content.replace('\\subsection{', '<h3>')
+    content = content.replace('\\textbf{', '<strong>')
+    content = content.replace('\\textit{', '<em>')
 
-    # Split content into lines and add to PDF
-    lines = content.split('\n')
-    for line in lines:
-        line = line.strip()
-        if line:
-            # Handle long lines by wrapping text
-            pdf.multi_cell(0, 6, txt=line, align='L')
-            pdf.ln(2)
+    # Remove LaTeX-specific commands that don't convert well
+    content = re.sub(r'\\[a-zA-Z]+\{[^}]*\}', '', content)
 
-    # Return PDF as bytes
-    return pdf.output(dest='S').encode('latin-1')
+    return html_template.format(content=content)
 
 
 @app.delete("/applications/{application_id}")

@@ -1,5 +1,6 @@
 import os
 import re
+from typing import List, Dict, Any
 from prompts import cover_letter_prompt_template
 import sys
 
@@ -18,64 +19,134 @@ resume_skills = {
 }
 
 
-def verify_cover_letter(letter_text):
-    """Verify that cover letter contains only valid skills and experience"""
-    issues = []
+class Planner:
 
-    # Check for mock/fake skills
-    words = re.findall(r'\b\w+\b', letter_text.lower())
+    def __init__(self, client):
+        self.client = client
+        self.planner_prompt = """
+        You are an AI planner for cover letter generation. Break down the task into executable steps.
+        The generated cover letter should be authentic, align with job requirements, and contain only verified skills and experience from the provided CV LaTeX.
+        Do not mock or exaggerate the resume content. Especially the experience, skills, and work experience should be accurate and concise.
+        Generate the pure letter body in the final step.
 
-    # Define known valid terms
-    valid_terms = set()
-    for category in resume_skills.values():
-        if isinstance(category, dict):
-            for value in category.values():
-                if isinstance(value, str):
-                    valid_terms.update(re.findall(r'\b\w+\b', value.lower()))
-        elif isinstance(category, list):
-            for item in category:
-                valid_terms.update(re.findall(r'\b\w+\b', item.lower()))
+        Job Description: {jd_text}
+        CV LaTeX (contains resume information): {cv_latex}
 
-    # Add common tech terms that are valid
-    valid_terms.update(['full', 'stack', 'developer', 'web', 'api', 'data', 'development', 'team', 'work', 'experience'])
+        Output a Python list of steps:
+        ```python
+        [
+            step_1,
+            step_2,
+            step_3,
+            ....,
+        ]
+        """
 
-    # Check for potentially fake skills
-    suspicious_terms = []
-    for word in words:
-        if len(word) > 3 and word not in valid_terms and not any(word in item.lower() for item in resume_skills['languages'] + resume_skills['frameworks'] + resume_skills['tools']):
-            suspicious_terms.append(word)
+    def build_plan(self, jd_text: str, cv_latex: str) -> List[str]:
+        """Build a comprehensive plan for generating a validated cover letter using Plan-and-Solve pattern."""
 
-    if suspicious_terms:
-        issues.append(f"Potentially mock skills detected: {', '.join(suspicious_terms[:3])}")
+        # Call LLM to generate the plan
+        try:
+            response = self.client.chat.completions.create(
+                model="mistralai/devstral-2512:free",
+                messages=[
+                    {"role": "system", "content": "You are a planning expert. Generate structured plans in the exact format requested."},
+                    {"role": "user", "content": self.planner_prompt.format(jd_text=jd_text, cv_latex=cv_latex )}
+                ],
+                temperature=0.1,  # Lower temperature for more consistent planning
+            )
 
-    # Check for incorrect working years
-    if 'years' in letter_text.lower() or any(char.isdigit() for char in letter_text):
-        # Look for year patterns
-        year_patterns = re.findall(r'\b\d+(?:\.\d+)?\s*(?:years?|yrs?)\b', letter_text.lower())
-        for pattern in year_patterns:
-            if '3' in pattern or '4' in pattern or '5' in pattern:
-                issues.append(f"Incorrect working years detected: {pattern} (actual: ~2.6 years)")
+            plan_response = response.choices[0].message.content.strip()
 
-    return issues
+            # Parse the Python list from the response
+            import re
+            python_code_match = re.search(r'```python\s*\n(.*?)\n```', plan_response, re.DOTALL)
+            if not python_code_match:
+                raise ValueError("Failed to parse plan from LLM response")
+
+            # Safely evaluate the Python list
+            plan_steps_text = python_code_match.group(1).strip()
+            try:
+                plan_steps = eval(plan_steps_text)
+                if not isinstance(plan_steps, list):
+                    raise ValueError("Plan is not a list")
+            except:
+                raise ValueError("Failed to parse plan steps as Python list")
+
+            return plan_steps
+        except Exception as e:
+            raise Exception(f"Failed to build plan: {e}")
 
 
-def compile_cl_tex(client, jd_text, company, title):
+class Solver:
+    def __init__(self, client):
+        self.client = client
+        self.resume_skills = resume_skills
+        self.solver_prompt = """
+        You are a solver for cover letter generation.
+        You will strictly follow the plan and solve the problem step by step.
+        You will be given a plan, CV LaTeX content (containing resume information), a job description, and a history.
+        You will focus on the current step and output the answer for the current step.
+        Do not output anything not related to the current step and explain your thinking process.
+
+
+        # Plan: {plan}
+
+        # CV LaTeX (resume information): {resume_skills}
+
+        # Job Description: {jd_text}
+
+        # history: {history}
+
+        # Current Step: {step}
+
+        Only output the answer for the current step.
+
+        """
+
+    def execute(self, plan: List[str], jd_text: str, company: str, title: str, cv_latex: str, interactive: bool = False) -> str:
+        """Execute the comprehensive plan to generate and verify a cover letter using Plan-and-Solve."""
+
+        # Execute the original plan
+        history = ""
+        for i, step in enumerate(plan):
+            solver_prompt = self.solver_prompt.format(plan=plan, resume_skills=cv_latex, jd_text=jd_text, history=history, step=step)
+            response = self.client.chat.completions.create(
+                model="mistralai/devstral-2512:free",
+                messages=[
+                    {"role": "user", "content": solver_prompt},
+                ],
+                temperature=0.1,
+            )
+            response_text = response.choices[0].message.content.strip()
+            history += f"step {i+1}: {step}\nresult: {response_text}"
+            print(step)
+
+        letter_body = response_text
+
+        return letter_body
+
+
+
+
+
+def compile_cl_tex(client, jd_text, company, title, cv_latex, interactive=False):
     main_tex_file = "./latex_cl/sample.tex"
     print("✍️ Generating CL LaTeX")
 
     letter, latex_content = write_cover_letter(
-        client, main_tex_file, jd_text, company, title
+        client, main_tex_file, jd_text, company, title, cv_latex, interactive=interactive
     )
 
-    print("✅ CL LaTeX generated successfully")
-    return latex_content
+    print(f"✅ CL LaTeX generated: {letter}")
+    return latex_content, letter
 
 
-def write_cover_letter(client, main_tex_file, jd_text, company, title):
+def write_cover_letter(client, main_tex_file, jd_text, company, title, cv_latex, interactive=False):
     with open(main_tex_file, "r", encoding="utf-8") as f:
         tex_text = f.read()
 
-    letter_body, formatted_letter = interactive_cover_letter_review(client, jd_text, company, title)
+    letter_body, formatted_letter = plan_and_solve_cover_letter(client, jd_text, company, title, cv_latex, interactive=interactive)
 
     # Inject into tex content
     new_tex = tex_text.replace("% Inject here", formatted_letter)
@@ -83,94 +154,21 @@ def write_cover_letter(client, main_tex_file, jd_text, company, title):
     return letter_body, new_tex
 
 
-def interactive_cover_letter_review(client, jd_text, company, title):
-    # Initial prompt for cover letter generation
-    messages = [
-        {
-            "role": "system",
-            "content": "You are a cover letter optimization agent using ReAct pattern. Generate authentic cover letters that align with job requirements using only verified candidate information. Never fabricate skills or exaggerate experience.",
-        },
-        {
-            "role": "user",
-            "content": cover_letter_prompt_template.format(
-                jd_text=jd_text,
-                company=company,
-                title=title,
-                name=os.getenv("NAME"),
-                user_notes="",
-            ),
-        },
-    ]
+def plan_and_solve_cover_letter(client, jd_text, company, title, cv_latex, interactive=False):
+    """Generate a cover letter using Plan-and-Solve pattern with optional interactive review."""
 
-    review_history = []
-    max_review_attempts = 3
-    letter_body = ""  # Initialize to avoid NameError if all attempts fail
+    # === Plan and solve for cover letter generation ===
+    planner = Planner(client)
+    solver = Solver(client)
 
-    for attempt in range(max_review_attempts):
-        print(f"\n🔄 Review Loop {attempt + 1}/{max_review_attempts}")
+    plan = planner.build_plan(jd_text, cv_latex)
+    letter_body = solver.execute(plan, jd_text, company, title, cv_latex, interactive=interactive)
+    print(letter_body)
 
-        # Step 1: Generate candidate cover letter
-        try:
-            response = client.chat.completions.create(
-                model=os.getenv("OPENAI_MODEL"),
-                messages=messages,
-            )
-            letter_body = response.choices[0].message.content.strip()
-        except Exception as e:
-            print(f"❌ Generation error: {e}")
-            continue
-
-        # Step 2: Verify the letter for authenticity
-        issues = verify_cover_letter(letter_body)
-        review_history.append({
-            'attempt': attempt + 1,
-            'letter': letter_body,
-            'issues': issues,
-            'accepted': False
-        })
-
-        print("\n📄 Generated cover letter:")
-        print(letter_body)
-        print(f"🔍 Issues Found: {len(issues)}")
-
-        if issues:
-            print(f"⚠️  Issues: {', '.join(issues)}")
-        else:
-            print("✅ Verification Passed!")
-
-        # If running in a non-interactive environment (e.g. Docker container / background task),
-        # automatically accept the generated letter. Otherwise prompt the user.
-        if sys.stdin is None or not sys.stdin.isatty():
-            user_input = ""
-            print("\nℹ️ Non-interactive environment detected — automatically accepting the cover letter.")
-        else:
-            user_input = input("\n📝 Press Enter to accept, or type suggestion: ").strip()
-
-        # Step 3: If accepted, return the result
-        if not user_input:
-            print("🎉 Cover letter accepted!")
-            formatted_paragraphs = [
-                line.strip() for line in letter_body.split("\n") if line.strip()
-            ]
-            formatted_letter = "\n\n\\vspace{0.5cm}\n\n".join(formatted_paragraphs)
-            return letter_body, formatted_letter
-
-        # Step 4: If suggestions provided, add to conversation and regenerate
-        if attempt < max_review_attempts - 1:
-            # Add current letter and user feedback to conversation history
-            messages.append({"role": "assistant", "content": letter_body})
-            messages.append({"role": "user", "content": f"USER FEEDBACK: {user_input}\n\nPlease revise the cover letter based on this feedback."})
-
-            print(f"🔧 Feedback received, regenerating...")
-            review_history[-1]['feedback'] = user_input
-
-    # If all attempts used, return the last letter with warning or raise error if no letter was generated
-    print("⚠️  Maximum review attempts reached. Returning last version.")
-    if not letter_body:
-        raise Exception("Failed to generate cover letter after maximum attempts. Please check OpenAI API configuration and try again.")
-
+    # Format for LaTeX
     formatted_paragraphs = [
         line.strip() for line in letter_body.split("\n") if line.strip()
     ]
     formatted_letter = "\n\n\\vspace{0.5cm}\n\n".join(formatted_paragraphs)
+
     return letter_body, formatted_letter

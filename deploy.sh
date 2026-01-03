@@ -54,7 +54,7 @@ sudo apt install -y git
 
 print_step "4" "克隆项目代码"
 if [ ! -d "CV-Maker" ]; then
-    git clone git@github.com:ChiXX/CV-Maker.git
+    git clone https://github.com/yourusername/CV-Maker.git
 fi
 cd CV-Maker
 

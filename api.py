@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     # Generate LaTeX
     cv_latex = compile_cv_tex(client, jd_text)
-    cl_latex = compile_cl_tex(client, jd_text, company, title)
+    cl_latex = compile_cl_tex(client, jd_text, company, title, cv_latex)
 
     # Create application record
     db = get_db()

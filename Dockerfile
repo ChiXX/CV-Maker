@@ -1,6 +1,5 @@
-# ================================
-# Builder Stage - For compilation
-# ================================
+# syntax=docker/dockerfile:1
+
 FROM python:3.12-slim as builder
 
 ENV PYTHONUNBUFFERED=1
@@ -38,6 +37,12 @@ ENV PYTHONPATH=/app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    wget \
+    gnupg \
+    && wget -q -O - https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.bookworm_amd64.deb > /tmp/wkhtmltox.deb \
+    && dpkg -i /tmp/wkhtmltox.deb || apt-get install -f -y \
+    && rm -f /tmp/wkhtmltox.deb \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install runtime Python packages (only what's needed)
@@ -53,7 +58,8 @@ RUN pip install --no-cache-dir \
     beautifulsoup4 \
     requests \
     httpx \
-    fpdf
+    fpdf \
+    pdfkit
 
 WORKDIR /app
 

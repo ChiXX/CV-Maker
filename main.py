@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     # Generate LaTeX content (no file operations)
     cv_latex = compile_cv_tex(client, jd_text)
-    cl_latex = compile_cl_tex(client, jd_text, company, title)
+    cl_latex = compile_cl_tex(client, jd_text, company, title, cv_latex)
 
     # Create application record with LaTeX content
     db = get_db()
