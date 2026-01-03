@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: cv_maker_db_dev
+    environment:
+      POSTGRES_DB: cv_maker
+      POSTGRES_USER: cv_user
+      POSTGRES_PASSWORD: cv_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cv_user -d cv_maker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: cv_maker_api_dev
+    environment:
+      DATABASE_URL: postgresql://cv_user:cv_password@postgres:5432/cv_maker
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-mistralai/mistral-small-3.1-24b-instruct:free}
+      NAME: ${NAME:-Your Name}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code for live reloading, but preserve the virtual environment
+      - ./app.py:/app/app.py
+      - ./api.py:/app/api.py
+      - ./main.py:/app/main.py
+      - ./cl_generator.py:/app/cl_generator.py
+      - ./cv_generator.py:/app/cv_generator.py
+      - ./jd_generator.py:/app/jd_generator.py
+      - ./database.py:/app/database.py
+      - ./models.py:/app/models.py
+      - ./prompts.py:/app/prompts.py
+      - ./latex_cl:/app/latex_cl
+      - ./latex_cv:/app/latex_cv
+      # Don't mount generated files
+      - /app/__pycache__
+      - /app/Applications
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    # Run as root to avoid permission issues with mounted volumes
+    user: root
+    command: sh -c "cd /app && uv run uvicorn app:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
