@@ -1,6 +1,6 @@
 # 🧠 Auto CV Generator
 
-Automatically customize your LaTeX CV based on a job listing URL. This tool extracts job descriptions using a free LLM (via OpenRouter), rewrites your profile summary to match the role, and compiles the final PDF resume using `pdflatex`.
+Automatically customize your LaTeX CV based on a job listing URL. This tool extracts job descriptions using a free LLM (via OpenRouter), rewrites your profile summary to match the role, and compiles the final PDF resume using `pdflatex`. Now includes database storage for tracking applications.
 
 ## ✅ Features
 
@@ -8,27 +8,94 @@ Automatically customize your LaTeX CV based on a job listing URL. This tool extr
 - Rewrites your CV summary using only the content from your existing resume
 - Outputs a job-targeted PDF named `CV-{name}.pdf` and saves the JD as a `.txt` file
 - All output stored in `Applications/{Company}-{Date}/`
+- **NEW**: Stores application data and generated PDFs in PostgreSQL database
 
 ## 🛠️ Requirements
 
 - Python 3.8+
 - `pdflatex` installed
+- Docker (for PostgreSQL database)
+- `just` command runner (optional, for easier command management)
 - Dependencies:
   - `openai`
   - `python-dotenv`
   - `beautifulsoup4`
   - `requests`
+  - `sqlalchemy`
+  - `psycopg2-binary`
 
-Install them via:
+Install Python dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
+Install `just` command runner (optional):
+
+```bash
+# On Ubuntu/Debian
+sudo apt install just
+
+# On macOS
+brew install just
+
+# Or download from: https://github.com/casey/just/releases
+```
+
+## 🗄️ Database Setup
+
+1. Start PostgreSQL using Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+2. The database will be available at `postgresql://cv_user:cv_password@localhost:5432/cv_maker`
+
+3. Initialize the database tables:
+
+```bash
+python init_db.py
+```
+
+4. Copy the example environment file and configure your settings:
+
+```bash
+cp env.example .env
+```
+
+Then edit `.env` with your actual configuration values.
+
+## 🚀 Quick Start with Just (Recommended)
+
+If you have `just` installed, use these simple commands:
+
+```bash
+# Complete setup (database + dependencies)
+just dev-setup
+
+# Run the application
+just run
+
+# Or run with a specific job URL
+just run-cv "https://example.com/job-url"
+```
+
+## 📋 Available Just Commands
+
+- `just` - Show all available commands
+- `just dev-setup` - Full development environment setup
+- `just run` - Start the CV generator
+- `just run-cv <url>` - Generate CV for specific job URL
+- `just db-start` - Start PostgreSQL database
+- `just db-stop` - Stop database
+- `just db-init` - Initialize database tables
+- `just status` - Show current setup status
+
 ## How to start
 
-```python
-python build_pdf.py
+```bash
+python main.py
 ```
 
 Expected output:

@@ -5,3 +5,5 @@ prompts.py
 __pycache__/
 *.py[cod]
 *.pyo
+
+*node_modules*
