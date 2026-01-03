@@ -20,7 +20,7 @@ import tempfile
 import shutil
 import io
 from fastapi import Query
-import pdfkit
+from fpdf import FPDF
 
 # Load environment variables
 load_dotenv()
@@ -445,11 +445,8 @@ async def compile_pdf(
         raise HTTPException(status_code=400, detail=f"No {target.upper()} content found")
 
     try:
-        # Convert LaTeX to simple HTML (basic conversion for demo)
-        html_content = latex_to_html(latex_content)
-
-        # Generate PDF using wkhtmltopdf
-        pdf_data = pdfkit.from_string(html_content, False)
+        # Generate PDF using FPDF
+        pdf_data = latex_to_pdf(latex_content, target, application.company, application.title)
 
         # Return PDF as streaming response
         return StreamingResponse(
@@ -462,46 +459,46 @@ async def compile_pdf(
         raise HTTPException(status_code=500, detail=f"PDF compilation failed: {str(e)}")
 
 
-def latex_to_html(latex_content: str) -> str:
+def latex_to_pdf(latex_content: str, doc_type: str, company: str, title: str) -> bytes:
     """
-    Basic LaTeX to HTML converter for CV/Cover Letter
-    This is a simplified converter - in production you'd want a more robust solution
+    Convert LaTeX content to PDF using FPDF
+    This is a simplified converter for CV/Cover Letter
     """
-    # Basic HTML template
-    html_template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
-            .cv-paragraph {{ margin: 20px 0; }}
-            .section {{ margin: 30px 0; }}
-            h1, h2, h3 {{ color: #333; }}
-            .contact {{ margin-bottom: 20px; }}
-        </style>
-    </head>
-    <body>
-        {content}
-    </body>
-    </html>
-    """
+    pdf = FPDF()
+    pdf.add_page()
 
-    # Basic LaTeX to HTML conversion
+    # Set font
+    pdf.set_font("Arial", size=12)
+
+    # Add title
+    pdf.set_font("Arial", style="B", size=16)
+    title_text = f"{doc_type.upper()}: {company} - {title}"
+    pdf.cell(200, 10, txt=title_text, ln=True, align='C')
+    pdf.ln(10)
+
+    # Reset font for content
+    pdf.set_font("Arial", size=11)
+
+    # Basic LaTeX to text conversion
     content = latex_content
 
-    # Convert basic LaTeX commands to HTML
-    content = content.replace('\\cvparagraph{', '<div class="cv-paragraph">')
-    content = content.replace('}', '</div>')
-    content = content.replace('\\section{', '<h2>')
-    content = content.replace('\\subsection{', '<h3>')
-    content = content.replace('\\textbf{', '<strong>')
-    content = content.replace('\\textit{', '<em>')
+    # Remove LaTeX commands and convert to plain text
+    content = re.sub(r'\\[a-zA-Z]+\{([^}]*)\}', r'\1', content)  # Keep content inside braces
+    content = re.sub(r'\\[a-zA-Z]+', '', content)  # Remove other LaTeX commands
+    content = content.replace('{', '').replace('}', '')  # Remove braces
+    content = re.sub(r'\s+', ' ', content)  # Normalize whitespace
 
-    # Remove LaTeX-specific commands that don't convert well
-    content = re.sub(r'\\[a-zA-Z]+\{[^}]*\}', '', content)
+    # Split content into lines and add to PDF
+    lines = content.split('\n')
+    for line in lines:
+        line = line.strip()
+        if line:
+            # Handle long lines by wrapping text
+            pdf.multi_cell(0, 6, txt=line, align='L')
+            pdf.ln(2)
 
-    return html_template.format(content=content)
+    # Return PDF as bytes
+    return pdf.output(dest='S').encode('latin-1')
 
 
 @app.delete("/applications/{application_id}")

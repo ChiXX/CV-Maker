@@ -54,8 +54,8 @@ sudo usermod -aG docker $USER
 
 **方法1: 使用Git (推荐)**
 ```bash
-# 克隆项目
-git clone https://github.com/yourusername/CV-Maker.git
+# 克隆项目 (使用SSH)
+git clone git@github.com:ChiXX/CV-Maker.git
 cd CV-Maker
 
 # 如果代码在本地，压缩后上传

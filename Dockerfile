@@ -34,11 +34,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
 
 # Install minimal runtime dependencies
-# Remove TeX Live - use cloud PDF generation instead
+# Remove TeX Live - use lightweight PDF generation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
-    wkhtmltopdf \
     && rm -rf /var/lib/apt/lists/*
 
 # Install runtime Python packages (only what's needed)
@@ -53,7 +52,8 @@ RUN pip install --no-cache-dir \
     python-dotenv \
     beautifulsoup4 \
     requests \
-    httpx
+    httpx \
+    fpdf
 
 WORKDIR /app
 
