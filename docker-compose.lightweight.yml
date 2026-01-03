@@ -1,35 +1,54 @@
 version: '3.8'
 
 services:
+  # 数据库服务保持不变
   postgres:
     image: postgres:15-alpine
     container_name: cv_maker_db_light
-    # ... 保持你之前的数据库配置不变 ...
+    environment:
+      POSTGRES_DB: cv_maker
+      POSTGRES_USER: cv_user
+      POSTGRES_PASSWORD: cv_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cv_user -d cv_maker"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
 
+  # 后端服务
   api:
     build: .
     container_name: cv_maker_api_light
     environment:
       DATABASE_URL: postgresql://cv_user:cv_password@postgres:5432/cv_maker
-      # ... 其他环境变量 ...
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
     ports:
-      - "2053:8000"  # 👈 后端改到 Cloudflare 支持的 2053 端口
+      - "2053:8000"  # 👈 改为 Cloudflare 支持的 2053 端口
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
+  # 前端服务
   frontend:
-    build: 
-      context: .
-      dockerfile: Dockerfile.frontend # 假设你的前端 Dockerfile 叫这个名字
+    build:
+      context: ./frontend # 👈 指向前端文件夹
+      dockerfile: Dockerfile
     container_name: cv_maker_frontend
     environment:
-      - NEXT_PUBLIC_API_URL=https://tycoola.edu.kg:2053 # 👈 指向带端口的 API 地址
+      - NEXT_PUBLIC_API_URL=https://tycoola.edu.kg:2053 # 👈 浏览器访问后端的地址
     ports:
       - "80:3000" # 👈 前端占用 80 端口
+    depends_on:
+      - api
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 384MB # 严格限制前端内存
+          memory: 450MB # 👈 严格限制前端内存
+
+volumes:
+  postgres_data:
