@@ -17,6 +17,53 @@ db-init:
 db-logs:
     docker-compose logs -f postgres
 
+# Lightweight deployment for low-resource environments
+lightweight-start:
+    docker-compose -f docker-compose.lightweight.yml up -d
+
+lightweight-stop:
+    docker-compose -f docker-compose.lightweight.yml down
+
+lightweight-logs:
+    docker-compose -f docker-compose.lightweight.yml logs -f
+
+lightweight-db-init:
+    docker-compose -f docker-compose.lightweight.yml exec api python init_db.py
+
+# Deployment commands
+deploy-prep:
+    echo "📋 部署前检查清单:"
+    echo "✓ 确保Oracle Cloud实例已创建"
+    echo "✓ 安全组配置允许端口22, 8000, 5432"
+    echo "✓ OpenAI API Key已准备"
+    echo "✓ SSH密钥已配置"
+    echo ""
+    echo "📝 部署步骤:"
+    echo "1. 连接到实例: ssh -i key.pem ubuntu@instance-ip"
+    echo "2. 运行部署脚本: ./deploy.sh"
+    echo "3. 或按照 DEPLOYMENT_STEPS.md 手动部署"
+    echo ""
+    echo "🔗 相关文件:"
+    echo "- 详细步骤: DEPLOYMENT_STEPS.md"
+    echo "- 低资源指南: DEPLOYMENT_LOW_RESOURCE.md"
+
+deploy-check:
+    echo "🔍 部署状态检查:"
+    @docker-compose -f docker-compose.lightweight.yml ps
+    @echo ""
+    @echo "📊 资源使用:"
+    @docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+    @echo ""
+    @echo "🌐 服务访问:"
+    @echo "- API: http://localhost:8000"
+    @echo "- 文档: http://localhost:8000/docs"
+
+deploy-cleanup:
+    echo "🧹 清理部署环境..."
+    docker-compose -f docker-compose.lightweight.yml down -v
+    docker system prune -f
+    echo "✅ 清理完成"
+
 # Virtual environment commands
 venv-activate:
     source .venv/bin/activate

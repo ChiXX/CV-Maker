@@ -1,0 +1,78 @@
+version: '3.8'
+
+# Lightweight production configuration for low-resource environments
+# Optimized for Oracle Cloud VM.Standard.E2.1.Micro (1 OCPU + 1GB RAM)
+
+services:
+  # Ultra-lightweight PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: cv_maker_db_light
+    environment:
+      POSTGRES_DB: cv_maker
+      POSTGRES_USER: cv_user
+      POSTGRES_PASSWORD: cv_password
+      # Aggressive memory optimization for 1GB environments
+      POSTGRES_SHARED_BUFFERS: 32MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 64MB
+      POSTGRES_WORK_MEM: 2MB
+      POSTGRES_MAINTENANCE_WORK_MEM: 16MB
+      POSTGRES_MAX_CONNECTIONS: 10
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    # Simplified healthcheck
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cv_user -d cv_maker"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128MB
+          cpus: '0.2'
+        reservations:
+          memory: 64MB
+          cpus: '0.1'
+
+  # Single-container API (no separate frontend - use static files)
+  api:
+    build: .
+    container_name: cv_maker_api_light
+    environment:
+      DATABASE_URL: postgresql://cv_user:cv_password@postgres:5432/cv_maker
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-mistralai/mistral-small-3.1-24b-instruct:free}
+      NAME: ${NAME:-Your Name}
+      # Production optimizations
+      PYTHONUNBUFFERED: 1
+      PYTHONDONTWRITEBYTECODE: 1
+      PYTHONOPTIMIZE: 1
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    # Single worker for low memory
+    command: python -m uvicorn app:app --host 0.0.0.0 --port 8000 --workers 1 --loop asyncio --http httptools --ws websockets --no-access-log
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 120s
+      timeout: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256MB
+          cpus: '0.5'
+        reservations:
+          memory: 128MB
+          cpus: '0.3'
+
+volumes:
+  postgres_data:

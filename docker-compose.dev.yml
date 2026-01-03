@@ -1,24 +1,40 @@
 version: '3.8'
 
 services:
+  # Lightweight PostgreSQL for low-memory environments
   postgres:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: cv_maker_db_dev
     environment:
       POSTGRES_DB: cv_maker
       POSTGRES_USER: cv_user
       POSTGRES_PASSWORD: cv_password
+      # Optimize for low memory
+      POSTGRES_SHARED_BUFFERS: 64MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 128MB
+      POSTGRES_WORK_MEM: 4MB
+      POSTGRES_MAINTENANCE_WORK_MEM: 32MB
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    # Disable healthcheck to reduce resource usage
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cv_user -d cv_maker"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    # Memory limits for low-resource environments
+    deploy:
+      resources:
+        limits:
+          memory: 256MB
+        reservations:
+          memory: 128MB
 
+  # Optimized API service
   api:
     build: .
     container_name: cv_maker_api_dev
@@ -28,38 +44,42 @@ services:
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-mistralai/mistral-small-3.1-24b-instruct:free}
       NAME: ${NAME:-Your Name}
+      # Memory optimization
+      PYTHONUNBUFFERED: 1
+      PYTHONDONTWRITEBYTECODE: 1
     ports:
       - "8000:8000"
     volumes:
-      # Mount source code for live reloading, but preserve the virtual environment
+      # Minimal volume mounts for development
       - ./app.py:/app/app.py
-      - ./api.py:/app/api.py
-      - ./main.py:/app/main.py
       - ./cl_generator.py:/app/cl_generator.py
       - ./cv_generator.py:/app/cv_generator.py
       - ./jd_generator.py:/app/jd_generator.py
       - ./database.py:/app/database.py
       - ./models.py:/app/models.py
       - ./prompts.py:/app/prompts.py
-      - ./latex_cl:/app/latex_cl
-      - ./latex_cv:/app/latex_cv
-      # Don't mount generated files
-      - /app/__pycache__
-      - /app/Applications
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    # Run as root to avoid permission issues with mounted volumes
     user: root
-    command: sh -c "cd /app && uv run uvicorn app:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app"
+    # Optimized command for low memory
+    command: python -m uvicorn app:app --host 0.0.0.0 --port 8000 --workers 1 --loop asyncio --http httptools --ws websockets
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
-      interval: 30s
-      timeout: 10s
+      interval: 60s
+      timeout: 30s
       retries: 3
-      start_period: 40s
+      start_period: 30s
+    # Memory limits
+    deploy:
+      resources:
+        limits:
+          memory: 512MB
+        reservations:
+          memory: 256MB
 
+  # Keep frontend as-is since it's already optimized
   frontend:
     build:
       context: ./frontend
@@ -70,7 +90,6 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # Mount source code for live reloading during development
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
@@ -80,10 +99,17 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
-      interval: 30s
-      timeout: 10s
+      interval: 60s
+      timeout: 30s
       retries: 3
-      start_period: 40s
+      start_period: 30s
+    # Memory limits for frontend
+    deploy:
+      resources:
+        limits:
+          memory: 256MB
+        reservations:
+          memory: 128MB
 
 volumes:
   postgres_data:

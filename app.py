@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
+import re
 from datetime import datetime
 
 from openai import OpenAI
@@ -19,6 +20,7 @@ import tempfile
 import shutil
 import io
 from fastapi import Query
+import pdfkit
 
 # Load environment variables
 load_dotenv()
@@ -419,6 +421,88 @@ async def get_application(
         created_at=application.created_at,
         updated_at=application.updated_at
     )
+
+@app.post("/applications/{application_id}/compile_pdf/{target}")
+async def compile_pdf(
+    application_id: int,
+    target: str,
+    db: Session = Depends(get_db_dependency)
+):
+    """
+    Compile PDF from LaTeX content using wkhtmltopdf
+    target: 'cv' or 'cl' (CV or Cover Letter)
+    """
+    application = db.query(Application).filter(Application.id == application_id).first()
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if target not in ['cv', 'cl']:
+        raise HTTPException(status_code=400, detail="Target must be 'cv' or 'cl'")
+
+    # Get LaTeX content
+    latex_content = application.cv_latex if target == 'cv' else application.cl_latex
+    if not latex_content:
+        raise HTTPException(status_code=400, detail=f"No {target.upper()} content found")
+
+    try:
+        # Convert LaTeX to simple HTML (basic conversion for demo)
+        html_content = latex_to_html(latex_content)
+
+        # Generate PDF using wkhtmltopdf
+        pdf_data = pdfkit.from_string(html_content, False)
+
+        # Return PDF as streaming response
+        return StreamingResponse(
+            io.BytesIO(pdf_data),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={target}_{application.company}_{application.title}.pdf"}
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF compilation failed: {str(e)}")
+
+
+def latex_to_html(latex_content: str) -> str:
+    """
+    Basic LaTeX to HTML converter for CV/Cover Letter
+    This is a simplified converter - in production you'd want a more robust solution
+    """
+    # Basic HTML template
+    html_template = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
+            .cv-paragraph {{ margin: 20px 0; }}
+            .section {{ margin: 30px 0; }}
+            h1, h2, h3 {{ color: #333; }}
+            .contact {{ margin-bottom: 20px; }}
+        </style>
+    </head>
+    <body>
+        {content}
+    </body>
+    </html>
+    """
+
+    # Basic LaTeX to HTML conversion
+    content = latex_content
+
+    # Convert basic LaTeX commands to HTML
+    content = content.replace('\\cvparagraph{', '<div class="cv-paragraph">')
+    content = content.replace('}', '</div>')
+    content = content.replace('\\section{', '<h2>')
+    content = content.replace('\\subsection{', '<h3>')
+    content = content.replace('\\textbf{', '<strong>')
+    content = content.replace('\\textit{', '<em>')
+
+    # Remove LaTeX-specific commands that don't convert well
+    content = re.sub(r'\\[a-zA-Z]+\{[^}]*\}', '', content)
+
+    return html_template.format(content=content)
+
 
 @app.delete("/applications/{application_id}")
 async def delete_application(
