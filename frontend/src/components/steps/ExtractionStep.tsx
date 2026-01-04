@@ -162,9 +162,13 @@ export function ExtractionStep({ data, onUpdate, onNext, onPrev }: ExtractionSte
         <div className="mb-6">
           <h3 className="text-lg font-medium text-gray-900 mb-2">Job Description</h3>
           <div className="bg-gray-50 p-4 rounded-md max-h-96 overflow-y-auto">
-            <pre className="whitespace-pre-wrap text-gray-700 text-sm">
-              {data.extractedData.jd_text}
-            </pre>
+            <div className="text-gray-700 text-sm leading-relaxed">
+              {data.extractedData.jd_text.split('\n').map((paragraph, index) => (
+                <p key={index} className="mb-3 last:mb-0">
+                  {paragraph.trim() || '\u00A0'}
+                </p>
+              ))}
+            </div>
           </div>
         </div>
 

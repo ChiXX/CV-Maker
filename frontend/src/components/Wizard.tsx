@@ -7,14 +7,12 @@ import { UrlInputStep } from './steps/UrlInputStep';
 import { ExtractionStep } from './steps/ExtractionStep';
 import { CvGenerationStep } from './steps/CvGenerationStep';
 import { ClGenerationStep } from './steps/ClGenerationStep';
-import { PdfDownloadStep } from './steps/PdfDownloadStep';
 
 const steps: WizardStep[] = [
   { id: 1, title: 'Job URL', description: 'Paste the job posting URL' },
   { id: 2, title: 'Extract Content', description: 'Review extracted job details' },
   { id: 3, title: 'Generate CV', description: 'Create customized CV' },
   { id: 4, title: 'Generate Cover Letter', description: 'Create tailored cover letter' },
-  { id: 5, title: 'Download PDFs', description: 'Download your application materials' },
 ];
 
 export function Wizard() {
@@ -78,20 +76,12 @@ export function Wizard() {
           <ClGenerationStep
             data={wizardData}
             onUpdate={updateWizardData}
-            onNext={nextStep}
-            onPrev={prevStep}
-          />
-        );
-      case 5:
-        return (
-          <PdfDownloadStep
-            data={wizardData}
-            onUpdate={updateWizardData}
-            onPrev={prevStep}
-            onRestart={() => {
+            onNext={() => {
+              // Since we removed step 5, after step 4 we should restart
               setCurrentStep(1);
               setWizardData({ url: '' });
             }}
+            onPrev={prevStep}
           />
         );
       default:

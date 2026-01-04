@@ -1,4 +1,4 @@
-import { JobApplication, JobApplicationRequest, JobExtractionRequest, JobExtractionResponse, CvGenerationRequest, CvGenerationResponse, ClGenerationRequest, ClGenerationResponse } from '@/types';
+import { JobExtractionRequest, JobExtractionResponse, CvGenerationRequest, CvGenerationResponse, ClGenerationRequest, ClGenerationResponse } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -97,40 +97,21 @@ export async function compilePdf(applicationId: number, target: 'cv' | 'cl'): Pr
   return response.blob();
 }
 
-export async function createApplication(request: JobApplicationRequest): Promise<JobApplication> {
-  const response = await fetch(`${API_BASE_URL}/applications/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-  });
-
+export async function getGenerationProgress(applicationId: number): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/progress`);
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Failed to create application: ${error}`);
+    throw new Error(`Failed to fetch generation progress: ${error}`);
   }
-
   return response.json();
 }
 
-export async function getApplications(): Promise<JobApplication[]> {
-  const response = await fetch(`${API_BASE_URL}/applications/`);
-
+export async function getApplication(applicationId: number): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}`);
   if (!response.ok) {
-    throw new Error('Failed to fetch applications');
+    const error = await response.text();
+    throw new Error(`Failed to fetch application: ${error}`);
   }
-
-  const data = await response.json();
-  return data.applications;
-}
-
-export async function getApplication(id: number): Promise<JobApplication> {
-  const response = await fetch(`${API_BASE_URL}/applications/${id}`);
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch application');
-  }
-
   return response.json();
 }
+

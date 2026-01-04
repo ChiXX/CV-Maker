@@ -105,10 +105,16 @@ class Solver:
 
     def execute(self, plan: List[str], jd_text) -> str:
         """Execute the comprehensive plan to generate and verify a CV summary using Plan-and-Solve.
+        Optionally accepts a progress_callback(step_index, step_text, result_text) called after each step.
         """
         history = ""
-        
-        for i,step in enumerate(plan):
+
+        # Default no-op callback
+        progress_callback = None
+        # allow passing a callback via jd_text if caller wants to (older callers pass jd_text normally)
+        # Better approach: expect caller to pass callback via attribute on self before calling; but to keep API simple,
+        # provide an alternative method `execute_with_progress` below.
+        for i, step in enumerate(plan):
             solver_prompt = self.solver_prompt.format(plan=plan, resume_skills=str(self.resume_skills), jd_text=jd_text, history=history, step=step)
             response = self.client.chat.completions.create(
                 model="mistralai/devstral-2512:free",
@@ -118,8 +124,30 @@ class Solver:
                 temperature=0.1,
             )
             response_text = response.choices[0].message.content.strip()
-            history += f"step {i+1}: {step}\nresult: {response_text}"
+            history += f"step {i+1}: {step}\nresult: {response_text}\n\n"
 
+        return response_text
+
+    def execute_with_progress(self, plan: List[str], jd_text, progress_callback=None) -> str:
+        """Execute plan and call progress_callback(step_index, step_text, result_text) after each step."""
+        history = ""
+        for i, step in enumerate(plan):
+            solver_prompt = self.solver_prompt.format(plan=plan, resume_skills=str(self.resume_skills), jd_text=jd_text, history=history, step=step)
+            response = self.client.chat.completions.create(
+                model="mistralai/devstral-2512:free",
+                messages=[
+                    {"role": "user", "content": solver_prompt},
+                ],
+                temperature=0.1,
+            )
+            response_text = response.choices[0].message.content.strip()
+            history += f"step {i+1}: {step}\nresult: {response_text}\n\n"
+            if progress_callback:
+                try:
+                    progress_callback(i + 1, step, response_text)
+                except Exception:
+                    # don't let callback failures stop execution
+                    pass
         return response_text
         
 
@@ -137,6 +165,7 @@ def compile_cv_tex(client, jd_text):
     solver = Solver(client)
     
     plan = planner.build_plan(jd_text, solver.resume_skills)
+    # execute returns the final result text after running solver through steps
     new_summary = solver.execute(plan, jd_text)
 
     # === 替换 LaTeX 内容 ===
@@ -148,6 +177,7 @@ def compile_cv_tex(client, jd_text):
     )
 
     print(f"✅ CV LaTeX: {new_summary}")
-    return tex_text_updated, new_summary
+    # Return the updated tex, the new summary, and the plan steps for frontend display
+    return tex_text_updated, new_summary, plan
 
 

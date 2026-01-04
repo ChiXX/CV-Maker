@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict
 import os
 import re
 from datetime import datetime
@@ -11,15 +11,18 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from cv_generator import compile_cv_tex
 from cl_generator import compile_cl_tex
+from cv_generator import Planner, Solver
 from jd_generator import extract_jd_from_url_with_llm
 from database import get_db_dependency, init_db, create_tables
 from models import Application
 from fastapi.responses import StreamingResponse
+from fastapi import BackgroundTasks
 import subprocess
 import tempfile
 import shutil
 import io
 from fastapi import Query
+
 
 # Load environment variables
 load_dotenv()
@@ -45,6 +48,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# In-memory generation status store: application_id -> status dict
+generation_status: Dict[int, Dict] = {}
 # Pydantic models for API
 class JobApplicationRequest(BaseModel):
     job_url: str
@@ -77,15 +82,14 @@ class CvGenerationRequest(BaseModel):
 
 class CvGenerationResponse(BaseModel):
     cv_latex: str
+    plan_steps: Optional[List[str]] = None
 
 class ClGenerationRequest(BaseModel):
     application_id: int
-
 class ClGenerationResponse(BaseModel):
     cl_latex: str
+    plan_steps: Optional[List[str]] = None
 
-class ApplicationListResponse(BaseModel):
-    applications: List[JobApplicationResponse]
 
 
 class PdfCompileResponse(BaseModel):
@@ -221,22 +225,57 @@ async def generate_cv(
     Generate CV LaTeX for an existing application
     """
     try:
-        # Get application
         application = db.query(Application).filter(Application.id == application_id).first()
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
-        
-        # Generate CV LaTeX
-        cv_latex, _ = compile_cv_tex(client, application.jd_text)
 
-        # Update application
-        application.cv_latex = cv_latex
-        db.commit()
+        # Build plan synchronously and return it immediately, then run solver in background
+        planner = Planner(client)
+        solver = Solver(client)
+        plan_steps = planner.build_plan(application.jd_text, solver.resume_skills)
 
-        return CvGenerationResponse(cv_latex=cv_latex)
+        # initialize progress store
+        generation_status[application_id] = {
+            "plan": plan_steps,
+            "current": 0,
+            "total": len(plan_steps),
+            "state": "pending",
+            "last_result": None,
+            "error": None,
+        }
 
+        # schedule background execution
+        def run_generation(app_id: int, jd_text: str):
+            try:
+                generation_status[app_id]["state"] = "running"
+
+                def progress_cb(step_index, step_text, result_text):
+                    generation_status[app_id]["current"] = step_index
+                    generation_status[app_id]["last_result"] = result_text
+
+                result_text = solver.execute_with_progress(plan_steps, application.jd_text, progress_callback=progress_cb)
+
+                # After execution, update application record
+                app_obj = db.query(Application).filter(Application.id == app_id).first()
+                if app_obj:
+                    # replace cvparagraph in template using compile_cv_tex to get full latex (reuse function)
+                    tex_updated, new_summary, _ = compile_cv_tex(client, jd_text)
+                    app_obj.cv_latex = tex_updated
+                    db.commit()
+
+                generation_status[app_id]["state"] = "completed"
+            except Exception as e:
+                generation_status[app_id]["state"] = "failed"
+                generation_status[app_id]["error"] = str(e)
+
+        # Use a background task to run generation so HTTP response returns quickly
+        import threading
+        t = threading.Thread(target=run_generation, args=(application_id, application.jd_text), daemon=True)
+        t.start()
+
+        return CvGenerationResponse(cv_latex="", plan_steps=plan_steps)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate CV: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to start CV generation: {str(e)}")
 
 @app.put("/applications/{application_id}/cv", response_model=CvGenerationResponse)
 async def regenerate_cv(
@@ -244,25 +283,54 @@ async def regenerate_cv(
     db: Session = Depends(get_db_dependency)
 ):
     """
-    Regenerate CV LaTeX for an existing application
+    Regenerate CV LaTeX for an existing application (starts background generation and returns plan)
     """
     try:
-        # Get application
         application = db.query(Application).filter(Application.id == application_id).first()
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
 
-        # Regenerate CV LaTeX
-        cv_latex = compile_cv_tex(client, application.jd_text)
+        planner = Planner(client)
+        solver = Solver(client)
+        plan_steps = planner.build_plan(application.jd_text, solver.resume_skills)
 
-        # Update application
-        application.cv_latex = cv_latex
-        db.commit()
+        generation_status[application_id] = {
+            "plan": plan_steps,
+            "current": 0,
+            "total": len(plan_steps),
+            "state": "pending",
+            "last_result": None,
+            "error": None,
+        }
 
-        return CvGenerationResponse(cv_latex=cv_latex)
+        def run_generation(app_id: int, jd_text: str):
+            try:
+                generation_status[app_id]["state"] = "running"
 
+                def progress_cb(step_index, step_text, result_text):
+                    generation_status[app_id]["current"] = step_index
+                    generation_status[app_id]["last_result"] = result_text
+
+                result_text = solver.execute_with_progress(plan_steps, application.jd_text, progress_callback=progress_cb)
+
+                app_obj = db.query(Application).filter(Application.id == app_id).first()
+                if app_obj:
+                    tex_updated, new_summary, _ = compile_cv_tex(client, jd_text)
+                    app_obj.cv_latex = tex_updated
+                    db.commit()
+
+                generation_status[app_id]["state"] = "completed"
+            except Exception as e:
+                generation_status[app_id]["state"] = "failed"
+                generation_status[app_id]["error"] = str(e)
+
+        import threading
+        t = threading.Thread(target=run_generation, args=(application_id, application.jd_text), daemon=True)
+        t.start()
+
+        return CvGenerationResponse(cv_latex="", plan_steps=plan_steps)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to regenerate CV: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to start CV regeneration: {str(e)}")
 
 @app.post("/applications/{application_id}/cl", response_model=ClGenerationResponse)
 async def generate_cover_letter(
@@ -278,14 +346,45 @@ async def generate_cover_letter(
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
 
-        # Generate CL LaTeX
-        cl_latex, _ = compile_cl_tex(client, application.jd_text, application.company, application.title, application.cv_latex)
+        planner = Planner(client)
+        solver = Solver(client)
+        plan_steps = planner.build_plan(application.jd_text, application.cv_latex)
 
-        # Update application
-        application.cl_latex = cl_latex
-        db.commit()
+        generation_status[application_id] = {
+            "plan": plan_steps,
+            "current": 0,
+            "total": len(plan_steps),
+            "state": "pending",
+            "last_result": None,
+            "error": None,
+        }
 
-        return ClGenerationResponse(cl_latex=cl_latex)
+        def run_cl_generation(app_id: int, jd_text: str, company: str, title: str, cv_latex: str):
+            try:
+                generation_status[app_id]["state"] = "running"
+
+                def progress_cb(step_index, step_text, result_text):
+                    generation_status[app_id]["current"] = step_index
+                    generation_status[app_id]["last_result"] = result_text
+
+                result_text = solver.execute_with_progress(plan_steps, application.jd_text, progress_callback=progress_cb)
+
+                app_obj = db.query(Application).filter(Application.id == app_id).first()
+                if app_obj:
+                    new_tex, letter_body, _ = compile_cl_tex(client, jd_text, company, title, cv_latex)
+                    app_obj.cl_latex = new_tex
+                    db.commit()
+
+                generation_status[app_id]["state"] = "completed"
+            except Exception as e:
+                generation_status[app_id]["state"] = "failed"
+                generation_status[app_id]["error"] = str(e)
+
+        import threading
+        t = threading.Thread(target=run_cl_generation, args=(application_id, application.jd_text, application.company, application.title, application.cv_latex), daemon=True)
+        t.start()
+
+        return ClGenerationResponse(cl_latex="", plan_steps=plan_steps)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate cover letter: {str(e)}")
@@ -304,128 +403,18 @@ async def regenerate_cover_letter(
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
 
-        # Regenerate CL LaTeX
-        cl_latex, _ = compile_cl_tex(client, application.jd_text, application.company, application.title, application.cv_latex)
+        # Regenerate CL LaTeX and obtain plan steps
+        cl_latex, _, plan_steps = compile_cl_tex(client, application.jd_text, application.company, application.title, application.cv_latex)
 
         # Update application
         application.cl_latex = cl_latex
         db.commit()
 
-        return ClGenerationResponse(cl_latex=cl_latex)
+        return ClGenerationResponse(cl_latex=cl_latex, plan_steps=plan_steps)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to regenerate cover letter: {str(e)}")
 
-@app.post("/applications/", response_model=JobApplicationResponse)
-async def create_application(
-    request: JobApplicationRequest,
-    db: Session = Depends(get_db_dependency)
-):
-    """
-    Create a new job application by extracting JD from URL and generating CV/cover letter LaTeX
-    """
-    try:
-        # Extract job description from URL
-        jd_text, company, title = extract_jd_from_url_with_llm(client, request.job_url)
-
-        # Create output directory
-        today = datetime.now().strftime("%Y-%m-%d")
-        out_dir = os.path.join("Applications", f"{today}-{company}")
-        os.makedirs(out_dir, exist_ok=True)
-
-        # Save JD text (sanitize title for filesystem safety)
-        import re as _re
-        safe_title = _re.sub(r'[\\/:"*?<>|]+', '_', title)
-        jd_txt_path = os.path.join(out_dir, f"{safe_title}.txt")
-        os.makedirs(os.path.dirname(jd_txt_path), exist_ok=True)
-        with open(jd_txt_path, "w", encoding="utf-8") as f:
-            f.write(jd_text)
-
-        # Generate LaTeX content (directly to database)
-        cv_latex = compile_cv_tex(client, jd_text)
-        cl_latex, _ = compile_cl_tex(client, jd_text, company, title, cv_latex)
-
-        # Create application record
-        application = Application(
-            jb_url=request.job_url,
-            jd_text=jd_text,
-            company=company,
-            title=title,
-            cv_latex=cv_latex,
-            cl_latex=cl_latex
-        )
-
-        # Save to database
-        db.add(application)
-        db.commit()
-        db.refresh(application)
-
-        return JobApplicationResponse(
-            id=application.id,
-            job_url=application.jb_url,
-            company=application.company,
-            title=application.title,
-            jd_text=application.jd_text,
-            cv_latex=application.cv_latex,
-            cl_latex=application.cl_latex,
-            created_at=application.created_at,
-            updated_at=application.updated_at
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create application: {str(e)}")
-
-@app.get("/applications/", response_model=ApplicationListResponse)
-async def list_applications(
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db_dependency)
-):
-    """
-    List all applications with pagination
-    """
-    applications = db.query(Application).offset(skip).limit(limit).all()
-
-    return ApplicationListResponse(
-        applications=[
-            JobApplicationResponse(
-                id=app.id,
-                job_url=app.jb_url,
-                company=app.company,
-                title=app.title,
-                jd_text=app.jd_text,
-                cv_latex=app.cv_latex,
-                cl_latex=app.cl_latex,
-                created_at=app.created_at,
-                updated_at=app.updated_at
-            )
-            for app in applications
-        ]
-    )
-
-@app.get("/applications/{application_id}", response_model=JobApplicationResponse)
-async def get_application(
-    application_id: int,
-    db: Session = Depends(get_db_dependency)
-):
-    """
-    Get a specific application by ID
-    """
-    application = db.query(Application).filter(Application.id == application_id).first()
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
-
-    return JobApplicationResponse(
-        id=application.id,
-        job_url=application.jb_url,
-        company=application.company,
-        title=application.title,
-        jd_text=application.jd_text,
-        cv_latex=application.cv_latex,
-        cl_latex=application.cl_latex,
-        created_at=application.created_at,
-        updated_at=application.updated_at
-    )
 
 @app.post("/applications/{application_id}/compile_pdf/{target}")
 async def compile_pdf(
@@ -459,6 +448,25 @@ async def compile_pdf(
         # Create temporary directory
         with tempfile.TemporaryDirectory() as tmpdir:
             # Write LaTeX content to main.tex
+            # Copy local LaTeX asset directories into the temp dir so pdflatex can find .cls, images, etc.
+            try:
+                project_root = os.getcwd()
+                for src_dir in ["latex_cv", "latex_cl"]:
+                    src_path = os.path.join(project_root, src_dir)
+                    if os.path.exists(src_path) and os.path.isdir(src_path):
+                        for root_dir, dirs, files in os.walk(src_path):
+                            rel_root = os.path.relpath(root_dir, src_path)
+                            dest_root = tmpdir if rel_root == "." else os.path.join(tmpdir, rel_root)
+                            os.makedirs(dest_root, exist_ok=True)
+                            for fname in files:
+                                try:
+                                    shutil.copy2(os.path.join(root_dir, fname), os.path.join(dest_root, fname))
+                                except Exception:
+                                    # ignore individual copy errors
+                                    pass
+            except Exception as e:
+                print(f"Warning: failed to copy LaTeX assets: {e}")
+
             tex_path = os.path.join(tmpdir, "main.tex")
             with open(tex_path, "w", encoding="utf-8") as f:
                 f.write(latex_content)
@@ -482,23 +490,42 @@ async def compile_pdf(
 
             # Check if PDF was generated, even if there were warnings/errors
             if not os.path.exists(pdf_path):
-                error_msg = f"PDF file was not generated. Return code: {proc.returncode}, stdout: {proc.stdout[:200]}, stderr: {proc.stderr[:200]}"
-                raise HTTPException(status_code=500, detail=error_msg)
-
-            # Stream the PDF file
-            def file_stream_generator():
+                # Collect full debug information
+                files_in_tmp = os.listdir(tmpdir)
+                error_info = {
+                    "message": "PDF file was not generated",
+                    "return_code": proc.returncode,
+                    "stdout": proc.stdout,
+                    "stderr": proc.stderr,
+                    "temp_dir": tmpdir,
+                    "files_in_temp_dir": files_in_tmp,
+                }
+                # Also save the .log and .tex contents if available for offline inspection
                 try:
-                    with open(pdf_path, "rb") as f:
-                        while True:
-                            chunk = f.read(64 * 1024)  # Read in 64KB chunks
-                            if not chunk:
-                                break
-                            yield chunk
+                    saved_debug_dir = os.path.join("Applications", "pdflatex_debug")
+                    os.makedirs(saved_debug_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    debug_file = os.path.join(saved_debug_dir, f"debug-{application_id}-{timestamp}.json")
+                    import json
+                    with open(debug_file, "w", encoding="utf-8") as df:
+                        json.dump(error_info, df, ensure_ascii=False, indent=2)
+                    error_info["saved_debug_file"] = debug_file
                 except Exception as e:
-                    raise HTTPException(status_code=500, detail=f"Error streaming PDF: {str(e)}")
+                    # ignore saving errors but note them
+                    error_info["save_error"] = str(e)
+
+                raise HTTPException(status_code=500, detail=error_info)
+
+            # Read the PDF into memory before leaving the tempdir, to avoid the
+            # TemporaryDirectory being removed before the response generator runs.
+            try:
+                with open(pdf_path, "rb") as f:
+                    pdf_bytes = f.read()
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error reading generated PDF: {str(e)}")
 
             return StreamingResponse(
-                file_stream_generator(),
+                io.BytesIO(pdf_bytes),
                 media_type="application/pdf",
                 headers={"Content-Disposition": f"attachment; filename={filename}"}
             )
@@ -509,64 +536,31 @@ async def compile_pdf(
         raise HTTPException(status_code=500, detail=f"PDF compilation failed: {str(e)}")
 
 
-def latex_to_html(latex_content: str) -> str:
-    """
-    Basic LaTeX to HTML converter for CV/Cover Letter
-    This is a simplified converter - in production you'd want a more robust solution
-    """
-    # Basic HTML template
-    html_template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
-            .cv-paragraph {{ margin: 20px 0; }}
-            .section {{ margin: 30px 0; }}
-            h1, h2, h3 {{ color: #333; }}
-            .contact {{ margin-bottom: 20px; }}
-        </style>
-    </head>
-    <body>
-        {content}
-    </body>
-    </html>
-    """
-
-    # Basic LaTeX to HTML conversion
-    content = latex_content
-
-    # Convert basic LaTeX commands to HTML
-    content = content.replace('\\cvparagraph{', '<div class="cv-paragraph">')
-    content = content.replace('}', '</div>')
-    content = content.replace('\\section{', '<h2>')
-    content = content.replace('\\subsection{', '<h3>')
-    content = content.replace('\\textbf{', '<strong>')
-    content = content.replace('\\textit{', '<em>')
-
-    # Remove LaTeX-specific commands that don't convert well
-    content = re.sub(r'\\[a-zA-Z]+\{[^}]*\}', '', content)
-
-    return html_template.format(content=content)
+@app.get("/applications/{application_id}/progress")
+async def get_generation_progress(application_id: int):
+    """Return plan and progress for a given application"""
+    status = generation_status.get(application_id)
+    # Log a concise progress line so only this endpoint produces console output
+    try:
+        progress_logger.info("progress id=%s state=%s current=%s total=%s", application_id, status["state"] if status else "not_started", status["current"] if status else 0, status["total"] if status else 0)
+    except Exception:
+        pass
+    if not status:
+        # Return a harmless "not_started" status instead of 404 so polling clients
+        # don't generate noisy 404 logs while waiting for generation to begin.
+        return {
+            "plan": [],
+            "current": 0,
+            "total": 0,
+            "state": "not_started",
+            "last_result": None,
+            "error": None,
+        }
+    return status
 
 
-@app.delete("/applications/{application_id}")
-async def delete_application(
-    application_id: int,
-    db: Session = Depends(get_db_dependency)
-):
-    """
-    Delete an application by ID
-    """
-    application = db.query(Application).filter(Application.id == application_id).first()
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
 
-    db.delete(application)
-    db.commit()
 
-    return {"message": "Application deleted successfully"}
 
 @app.get("/test_pdflatex")
 async def test_pdflatex():

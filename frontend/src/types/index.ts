@@ -10,9 +10,6 @@ export interface JobApplication {
   updated_at: string;
 }
 
-export interface JobApplicationRequest {
-  job_url: string;
-}
 
 export interface JobExtractionRequest {
   job_url: string;
@@ -34,6 +31,7 @@ export interface CvGenerationRequest {
 
 export interface CvGenerationResponse {
   cv_latex: string;
+  plan_steps?: string[];
 }
 
 export interface ClGenerationRequest {
@@ -42,6 +40,7 @@ export interface ClGenerationRequest {
 
 export interface ClGenerationResponse {
   cl_latex: string;
+  plan_steps?: string[];
 }
 
 export interface WizardStep {
@@ -50,17 +49,12 @@ export interface WizardStep {
   description: string;
 }
 
-export interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
-
 export interface GenerationState {
   isLoading: boolean;
-  chatHistory: ChatMessage[];
   result?: string;
   error?: string;
+  planSteps?: string[];
+  currentStep?: number;
 }
 
 export type WizardData = {
