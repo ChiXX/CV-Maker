@@ -8,7 +8,7 @@ class Planner:
     def __init__(self, client):
         self.client = client
         self.planner_prompt = """
-        You are an AI planner for CV head line generation. Break down the task into executable steps.
+        You are an AI planner for CV head line generation. Break down the task into executable steps. But the steps should with in 5 steps.
         The generated head line should be a short sentence no more than 150 characters and can be used as a CV head line.
         Do not mock or exaggerate the resume inventory. Especially the experience, skills, and work experience should be accurate and concise.
 
@@ -119,7 +119,6 @@ class Solver:
             )
             response_text = response.choices[0].message.content.strip()
             history += f"step {i+1}: {step}\nresult: {response_text}"
-            print(step, response_text)
 
         return response_text
         

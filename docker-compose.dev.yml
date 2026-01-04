@@ -9,13 +9,13 @@ services:
       POSTGRES_USER: cv_user
       POSTGRES_PASSWORD: cv_password
     volumes:
-      - postgres_data_dev:/var/lib/postgresql/data # 本地开发专用的数据卷
+      - postgres_data_dev:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cv_user -d cv_maker"]
-      interval: 10s # 开发环境可以检查得勤快一点
+      interval: 10s
       timeout: 5s
       retries: 5
 
@@ -26,31 +26,34 @@ services:
       DATABASE_URL: postgresql://cv_user:cv_password@postgres:5432/cv_maker
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       PYTHONUNBUFFERED: 1
+      PYTHONPATH: /app
     volumes:
-      - .:/app  # 👈 核心：将本地代码目录实时挂载到容器中
+      - .:/app
+      - /app/.venv  # 👈 匿名卷：保护容器内的依赖不被覆盖
     ports:
-      - "8000:8000" # 本地开发使用标准的 8000 端口
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    command: python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+    command: /app/.venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile # 确保这个 Dockerfile 的 CMD 是 npm run dev
+      dockerfile: Dockerfile
     container_name: cv_maker_frontend_dev
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000 
+      NEXT_PUBLIC_API_URL: http://localhost:8000
     volumes:
-      - ./frontend:/app  # 👈 挂载前端源代码
-      - /app/node_modules # 👈 匿名卷：防止本地 node_modules 冲突
+      - ./frontend:/app
+      - /app/node_modules
     ports:
-      - "3000:3000" # 本地访问地址为 http://localhost:3000
+      - "3000:3000" 
     depends_on:
       - api
     restart: unless-stopped
+    command: npm run dev
 
 volumes:
-  postgres_data_dev: # 与生产环境数据隔离
+  postgres_data_dev:

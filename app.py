@@ -20,7 +20,6 @@ import tempfile
 import shutil
 import io
 from fastapi import Query
-import pdfkit
 
 # Load environment variables
 load_dotenv()
@@ -106,6 +105,20 @@ async def extract_job_details(
     Extract job details from URL and create initial application record
     """
     try:
+        # Check if URL already exists
+        existing_application = db.query(Application).filter(Application.jb_url == request.job_url).first()
+        if existing_application:
+            # Return existing application instead of creating duplicate
+            return JobExtractionResponse(
+                id=existing_application.id,
+                job_url=existing_application.jb_url,
+                company=existing_application.company,
+                title=existing_application.title,
+                jd_text=existing_application.jd_text,
+                created_at=existing_application.created_at,
+                updated_at=existing_application.updated_at
+            )
+
         # Extract job description from URL
         jd_text, company, title = extract_jd_from_url_with_llm(client, request.job_url)
 
@@ -421,7 +434,7 @@ async def compile_pdf(
     db: Session = Depends(get_db_dependency)
 ):
     """
-    Compile PDF from LaTeX content using wkhtmltopdf
+    Compile PDF from LaTeX content using pdflatex
     target: 'cv' or 'cl' (CV or Cover Letter)
     """
     application = db.query(Application).filter(Application.id == application_id).first()
@@ -436,20 +449,62 @@ async def compile_pdf(
     if not latex_content:
         raise HTTPException(status_code=400, detail=f"No {target.upper()} content found")
 
+    # Sanitize filename for Content-Disposition header
+    import re as _re
+    safe_company = _re.sub(r'[\\/:"*?<>|]+', '_', application.company)
+    safe_title = _re.sub(r'[\\/:"*?<>|]+', '_', application.title)
+    filename = f"{target}_{safe_company}_{safe_title}.pdf"
+
     try:
-        # Convert LaTeX to simple HTML (basic conversion for demo)
-        html_content = latex_to_html(latex_content)
+        # Create temporary directory
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Write LaTeX content to main.tex
+            tex_path = os.path.join(tmpdir, "main.tex")
+            with open(tex_path, "w", encoding="utf-8") as f:
+                f.write(latex_content)
 
-        # Generate PDF using wkhtmltopdf
-        pdf_data = pdfkit.from_string(html_content, False)
+            # Run pdflatex to compile PDF (allow errors but continue)
+            proc = subprocess.run([
+                "pdflatex",
+                "-interaction=nonstopmode",
+                f"-output-directory={tmpdir}",
+                "main.tex",
+            ], capture_output=True, text=True, cwd=tmpdir)
 
-        # Return PDF as streaming response
-        return StreamingResponse(
-            io.BytesIO(pdf_data),
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={target}_{application.company}_{application.title}.pdf"}
-        )
+            pdf_path = os.path.join(tmpdir, "main.pdf")
 
+            # Debug logging
+            print(f"pdflatex return code: {proc.returncode}")
+            print(f"pdflatex stdout: {proc.stdout[:500]}...")  # First 500 chars
+            print(f"pdflatex stderr: {proc.stderr[:500]}...")  # First 500 chars
+            print(f"Temporary directory: {tmpdir}")
+            print(f"Files in temp dir: {os.listdir(tmpdir)}")
+
+            # Check if PDF was generated, even if there were warnings/errors
+            if not os.path.exists(pdf_path):
+                error_msg = f"PDF file was not generated. Return code: {proc.returncode}, stdout: {proc.stdout[:200]}, stderr: {proc.stderr[:200]}"
+                raise HTTPException(status_code=500, detail=error_msg)
+
+            # Stream the PDF file
+            def file_stream_generator():
+                try:
+                    with open(pdf_path, "rb") as f:
+                        while True:
+                            chunk = f.read(64 * 1024)  # Read in 64KB chunks
+                            if not chunk:
+                                break
+                            yield chunk
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Error streaming PDF: {str(e)}")
+
+            return StreamingResponse(
+                file_stream_generator(),
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF compilation failed: {str(e)}")
 
@@ -512,6 +567,58 @@ async def delete_application(
     db.commit()
 
     return {"message": "Application deleted successfully"}
+
+@app.get("/test_pdflatex")
+async def test_pdflatex():
+    """
+    Test endpoint to check pdflatex installation and basic functionality
+    """
+    try:
+        # Test pdflatex version
+        proc = subprocess.run(["pdflatex", "--version"], capture_output=True, text=True, timeout=10)
+        version_info = proc.stdout.split('\n')[0] if proc.stdout else "No version info"
+
+        # Create a minimal LaTeX document for testing
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tex_content = r"""
+\documentclass{article}
+\begin{document}
+Hello World
+\end{document}
+"""
+            tex_path = os.path.join(tmpdir, "test.tex")
+            with open(tex_path, "w", encoding="utf-8") as f:
+                f.write(tex_content)
+
+            # Try to compile
+            proc = subprocess.run([
+                "pdflatex",
+                "-interaction=nonstopmode",
+                f"-output-directory={tmpdir}",
+                "test.tex",
+            ], capture_output=True, text=True, cwd=tmpdir, timeout=30)
+
+            pdf_path = os.path.join(tmpdir, "test.pdf")
+            pdf_exists = os.path.exists(pdf_path)
+
+            return {
+                "pdflatex_available": True,
+                "version": version_info,
+                "test_compilation": {
+                    "return_code": proc.returncode,
+                    "pdf_generated": pdf_exists,
+                    "stdout_preview": proc.stdout[:200] + "..." if len(proc.stdout) > 200 else proc.stdout,
+                    "stderr_preview": proc.stderr[:200] + "..." if len(proc.stderr) > 200 else proc.stderr,
+                    "files_created": os.listdir(tmpdir)
+                }
+            }
+
+    except subprocess.TimeoutExpired:
+        return {"error": "pdflatex timed out"}
+    except FileNotFoundError:
+        return {"error": "pdflatex not found in PATH"}
+    except Exception as e:
+        return {"error": f"Unexpected error: {str(e)}"}
 
 @app.get("/")
 async def root():

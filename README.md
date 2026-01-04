@@ -15,9 +15,30 @@ Automatically customize your LaTeX CV based on a job listing URL. This tool extr
 ## 🛠️ Requirements
 
 - Python 3.12+
-- Docker (for PostgreSQL database)
+- Docker (for PostgreSQL database and LaTeX compilation)
 - `just` command runner (optional, for easier command management)
 - OpenAI API access for job description extraction and content generation
+- **LaTeX Distribution**: pdflatex must be installed for PDF compilation (included in most Docker images)
+
+### PDF Compilation Requirements
+
+The application uses pdflatex to compile LaTeX source into PDF files. This requires:
+
+- **In Docker**: Use an image with TeX Live installed (e.g., `texlive/texlive:latest` or a custom image with `apt-get install texlive-latex-base texlive-fonts-recommended`)
+- **On Local Machine**: Install a LaTeX distribution like TeX Live or MiKTeX
+
+Example Dockerfile with LaTeX:
+```dockerfile
+FROM python:3.12-slim
+
+# Install LaTeX
+RUN apt-get update && apt-get install -y \
+    texlive-latex-base \
+    texlive-fonts-recommended \
+    texlive-fonts-extra \
+    texlive-latex-extra \
+    && rm -rf /var/lib/apt/lists/*
+```
 
 ### Python Dependencies
 ```bash
@@ -80,12 +101,37 @@ The web interface provides a modern UI for:
 - **LaTeX Generation**: LaTeX templates with AI-customized content
 
 ### API Endpoints
+- `POST /applications/extract` - Extract job details from URL
 - `POST /applications/` - Create new application from job URL
 - `GET /applications/` - List all applications with pagination
 - `GET /applications/{id}` - Get specific application details
 - `DELETE /applications/{id}` - Delete an application
+- `POST /applications/{id}/cv` - Generate CV LaTeX for application
+- `POST /applications/{id}/cl` - Generate cover letter LaTeX for application
+- `POST /applications/{id}/compile_pdf/{target}` - Compile LaTeX to PDF (target: 'cv' or 'cl')
 - `GET /docs` - Interactive API documentation (Swagger UI)
 - `GET /redoc` - Alternative API documentation
+
+### PDF Compilation
+
+The `/applications/{id}/compile_pdf/{target}` endpoint compiles LaTeX source to PDF using pdflatex:
+
+- **Method**: POST
+- **Parameters**: `application_id` (path), `target` ('cv' or 'cl')
+- **Returns**: PDF file as streaming response with `application/pdf` content type
+- **Requirements**: pdflatex must be available in the container/environment
+- **Cleanup**: Temporary files are automatically removed after streaming
+
+Example usage:
+```bash
+# Compile CV to PDF
+curl -X POST "http://localhost:8000/applications/123/compile_pdf/cv" \
+  --output cv.pdf
+
+# Compile cover letter to PDF
+curl -X POST "http://localhost:8000/applications/123/compile_pdf/cl" \
+  --output cover_letter.pdf
+```
 
 ## 🚀 Quick Start
 
@@ -160,6 +206,45 @@ python app.py
 # Server will be available at http://localhost:8000
 # API documentation at http://localhost:8000/docs
 ```
+
+### PDF Compilation Testing
+
+Before running the full application, test that pdflatex is working correctly:
+
+```bash
+# Test pdflatex installation and basic functionality
+python test_pdflatex.py
+
+# Test pdflatex via API endpoint
+curl http://localhost:8000/test_pdflatex
+```
+
+### Troubleshooting PDF Generation
+
+If you encounter PDF compilation errors:
+
+1. **Test pdflatex directly**:
+   ```bash
+   python test_pdflatex.py
+   ```
+
+2. **Check API diagnostics**:
+   ```bash
+   curl http://localhost:8000/test_pdflatex
+   ```
+
+3. **Check Docker logs** (if running in container):
+   ```bash
+   docker logs <container_name>
+   ```
+
+4. **Common issues**:
+   - **Missing LaTeX packages**: Install additional packages: `apt-get install texlive-latex-extra texlive-fonts-extra`
+   - **Font issues**: Ensure `texlive-fonts-recommended` is installed
+   - **PATH issues**: pdflatex not found - check if it's in PATH
+   - **File permissions**: Ensure write permissions in temp directories
+
+5. **Debug mode**: The application now logs detailed pdflatex output to console when compilation fails.
 
 ### API Usage
 Use the interactive API documentation at `/docs` or make direct API calls to create applications from job URLs. The API will extract job descriptions, generate customized LaTeX content, and store everything in the database.

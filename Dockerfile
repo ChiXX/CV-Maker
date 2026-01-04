@@ -1,11 +1,13 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.12-slim as builder
+# ================================
+# 第一阶段：构建阶段 (Builder Stage)
+# ================================
+FROM python:3.12-slim AS builder
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Install minimal build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
@@ -14,75 +16,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install uv
 RUN pip install --no-cache-dir uv
-
-# Copy dependency files
 COPY pyproject.toml uv.lock ./
-
-# Install Python dependencies to virtual environment
 RUN uv sync --frozen --no-install-project --no-dev
 
 # ================================
-# Runtime Stage - Minimal final image
+# 第二阶段：运行阶段 (Runtime Stage)
 # ================================
-FROM python:3.12-slim as runtime
+FROM python:3.12-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
 
-# Install minimal runtime dependencies
-# Remove TeX Live - use lightweight PDF generation
+WORKDIR /app
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
-    wget \
-    gnupg \
-    && wget -q -O - https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.bookworm_amd64.deb > /tmp/wkhtmltox.deb \
-    && dpkg -i /tmp/wkhtmltox.deb || apt-get install -f -y \
-    && rm -f /tmp/wkhtmltox.deb \
-    && apt-get clean \
+    texlive-latex-base \
+    texlive-latex-recommended \
+    texlive-latex-extra \
+    texlive-fonts-extra \
+    texlive-fonts-recommended \
+    ghostscript \
     && rm -rf /var/lib/apt/lists/*
 
-# Install runtime Python packages (only what's needed)
-RUN pip install --no-cache-dir \
-    fastapi \
-    uvicorn \
-    sqlalchemy \
-    psycopg2-binary \
-    python-multipart \
-    pydantic \
-    openai \
-    python-dotenv \
-    beautifulsoup4 \
-    requests \
-    httpx \
-    fpdf \
-    pdfkit
-
-WORKDIR /app
-
-# Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
 
-# Copy application code (exclude heavy files)
 COPY app.py cl_generator.py cv_generator.py jd_generator.py database.py models.py prompts.py ./
 COPY latex_cl/ ./latex_cl/
 COPY latex_cv/ ./latex_cv/
 
-# Create non-root user
-RUN groupadd -g 1001 app \
-    && useradd -u 1001 -g app -m -s /bin/bash app \
-    && chown -R app:app /app
-
-USER app
-
 EXPOSE 8000
 
-# Health check
 HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/docs || exit 1
 
-# Run with optimized settings for low memory
-CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "asyncio"]
+CMD ["/app/.venv/bin/python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "asyncio"]

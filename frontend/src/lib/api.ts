@@ -85,13 +85,13 @@ export async function regenerateCoverLetter(applicationId: number): Promise<ClGe
 }
 
 export async function compilePdf(applicationId: number, target: 'cv' | 'cl'): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/compile_pdf/fallback?target=${target}`, {
+  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/compile_pdf/${target}`, {
     method: 'POST',
   });
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Failed to compile PDF (server fallback): ${error}`);
+    throw new Error(`Failed to compile PDF: ${error}`);
   }
 
   return response.blob();

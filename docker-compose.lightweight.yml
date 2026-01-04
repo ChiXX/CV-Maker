@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 数据库服务保持不变
+  # 数据库服务
   postgres:
     image: postgres:15-alpine
     container_name: cv_maker_db_light
@@ -9,12 +9,22 @@ services:
       POSTGRES_DB: cv_maker
       POSTGRES_USER: cv_user
       POSTGRES_PASSWORD: cv_password
+    command: >
+      postgres 
+      -c max_connections=20 
+      -c shared_buffers=32MB 
+      -c work_mem=4MB 
+      -c maintenance_work_mem=8MB
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cv_user -d cv_maker"]
-      interval: 60s
+      interval: 30s
       timeout: 10s
       retries: 3
 
@@ -25,30 +35,42 @@ services:
     environment:
       DATABASE_URL: postgresql://cv_user:cv_password@postgres:5432/cv_maker
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PYTHONUNBUFFERED: 1
+      PYTHONPATH: /app
     ports:
-      - "2053:8000"  # 👈 改为 Cloudflare 支持的 2053 端口
+      - "2053:8000" 
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    command: >
+      /app/.venv/bin/python -m uvicorn app:app 
+      --host 0.0.0.0 
+      --port 8000 
+      --workers 1 
+      --no-access-log
+    deploy:
+      resources:
+        limits:
+          memory
 
   # 前端服务
   frontend:
     build:
-      context: ./frontend # 👈 指向前端文件夹
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: cv_maker_frontend
     environment:
-      - NEXT_PUBLIC_API_URL=https://tycoola.edu.kg:2053 # 👈 浏览器访问后端的地址
+      - NEXT_PUBLIC_API_URL=https://tycoola.edu.kg:2053 
     ports:
-      - "80:3000" # 👈 前端占用 80 端口
+      - "80:3000" 
     depends_on:
       - api
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 450MB # 👈 严格限制前端内存
+          memory: 256MB 
 
 volumes:
   postgres_data:
