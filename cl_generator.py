@@ -19,11 +19,13 @@ def compile_cl_tex(client, jd_text, company, title, cv_latex, interactive=False)
         tex_text = f.read()
 
     # Plan and solve for cover letter generation
-    planner = Planner(client, CL_PLANNER_PROMPT)
-    solver = Solver(client, CL_SOLVER_PROMPT, cv_latex)
+    # planner = Planner(client, CL_PLANNER_PROMPT)
+    # solver = Solver(client, CL_SOLVER_PROMPT, cv_latex)
 
-    plan = planner.build_plan(jd_text, cv_latex)
-    letter_body = solver.execute(plan, jd_text, company=company, title=title, cv_latex=cv_latex)
+    # plan = planner.build_plan(jd_text, cv_latex)
+    # letter_body = solver.execute(plan, jd_text, company=company, title=title, cv_latex=cv_latex)
+    plan = ["test","test2"]
+    letter_body = "test"
     # Format for LaTeX
     formatted_paragraphs = [
         line.strip() for line in letter_body.split("\n") if line.strip()
