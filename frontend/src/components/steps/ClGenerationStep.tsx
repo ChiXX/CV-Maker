@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { WizardData } from '@/types';
 import * as api from '@/lib/api';
 import { generateCoverLetter, regenerateCoverLetter, compilePdf as compilePdfServer } from '@/lib/api';
@@ -21,10 +22,9 @@ interface ProcessStep {
 }
 
 export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGenerationStepProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [clPdfUrl, setClPdfUrl] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState<GenerationStep>('planning');
+  const [generationStarted, setGenerationStarted] = useState(false);
 
   // processSteps will be derived from backend plan when available
   const dynamicPlanSteps = (data.clGeneration as any)?.planSteps;
@@ -41,201 +41,143 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
         { id: 'complete', label: 'Cover letter generation complete', status: 'pending' },
       ];
 
+  // Reset generation flag when application changes
+  useEffect(() => {
+    setGenerationStarted(false);
+  }, [data.application?.id]);
+
+  // PDF Query - only fetch when we have an application and CL is generated
+  const {
+    data: clPdfBlob,
+    refetch: refetchPdf,
+    isLoading: isPdfLoading,
+    error: pdfError
+  } = useQuery({
+    queryKey: ['cl-pdf', data.application?.id],
+    queryFn: async () => {
+      if (!data.application?.id) throw new Error('No application ID');
+      return await compilePdfServer(data.application.id, 'cl');
+    },
+    enabled: !!data.application?.id && !!data.application?.cl_latex,
+    staleTime: Infinity, // Don't refetch automatically
+  });
+
+  // Generate CL Mutation
+  const generateClMutation = useMutation({
+    mutationFn: async (applicationId: number) => {
+      setCurrentStep('planning');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate planning time
+
+      setCurrentStep('executing');
+      return await generateCoverLetter({ application_id: applicationId });
+    },
+    onSuccess: (result) => {
+      // Update state with generation result
+      onUpdate({
+        clGeneration: {
+          isLoading: false,
+          result: result.cl_latex,
+          planSteps: result.plan_steps || [],
+          currentStep: result.plan_steps?.length || 0,
+        } as any,
+        application: data.application ? {
+          ...data.application,
+          cl_latex: result.cl_latex,
+        } : undefined,
+      });
+
+      setCurrentStep('rendering');
+      // PDF will be fetched automatically by the query when cl_latex is set
+
+      setCurrentStep('complete');
+    },
+    onError: (error: Error) => {
+      setCurrentStep('planning'); // Reset on error
+      onUpdate({
+        clGeneration: {
+          isLoading: false,
+          error: error.message,
+        },
+      });
+    },
+  });
+
+  // Regenerate CL Mutation
+  const regenerateClMutation = useMutation({
+    mutationFn: async (applicationId: number) => {
+      setCurrentStep('planning');
+      onUpdate({ clGeneration: undefined });
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate planning time
+
+      setCurrentStep('executing');
+      return await regenerateCoverLetter(applicationId);
+    },
+    onSuccess: (result) => {
+      // Update state with regeneration result
+      onUpdate({
+        clGeneration: {
+          isLoading: false,
+          result: result.cl_latex,
+          planSteps: result.plan_steps || [],
+          currentStep: result.plan_steps?.length || 0,
+        } as any,
+        application: data.application ? {
+          ...data.application,
+          cl_latex: result.cl_latex,
+        } : undefined,
+      });
+
+      setCurrentStep('rendering');
+      // Invalidate PDF query to refetch
+      queryClient.invalidateQueries({ queryKey: ['cl-pdf', data.application?.id] });
+
+      setCurrentStep('complete');
+    },
+    onError: (error: Error) => {
+      setCurrentStep('planning');
+      onUpdate({
+        clGeneration: {
+          isLoading: false,
+          error: error.message,
+        },
+      });
+    },
+  });
+
   useEffect(() => {
     if (data.application?.cl_latex && !data.clGeneration) {
       // CL is already generated, show completed state
       setCurrentStep('complete');
-      renderPdf();
-    } else if (!data.clGeneration && data.application && !data.application.cl_latex) {
-      // Start CL generation process
-      generateCL();
+    } else if (!data.clGeneration && data.application && !data.application.cl_latex && !generateClMutation.isPending && !regenerateClMutation.isPending && !generationStarted) {
+      // Start CL generation process (only once)
+      setGenerationStarted(true);
+      generateClMutation.mutate(data.application.id);
     }
-  }, [data.application, data.clGeneration]);
+  }, [data.application, data.clGeneration, generateClMutation.isPending, regenerateClMutation.isPending, generationStarted]);
 
-  const generateCL = async () => {
-    if (!data.application?.id) return;
 
-    setIsLoading(true);
-    setError(null);
-    setCurrentStep('planning');
-
-    try {
-      // Step 1: Planning
-      setCurrentStep('planning');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Step 2: Executing plan
-      setCurrentStep('executing');
-      const result = await generateCoverLetter({ application_id: data.application.id });
-      // Start polling backend progress similar to CV flow
-      onUpdate({
-        clGeneration: {
-          isLoading: true,
-          result: undefined,
-          planSteps: result.plan_steps,
-          currentStep: 0,
-        } as any,
-      });
-
-      const pollInterval = 1000;
-      let pollHandle: number | undefined;
-      const startPolling = () => {
-        pollHandle = window.setInterval(async () => {
-          try {
-            const status = await (api as any).getGenerationProgress(data.application!.id);
-            const current = status.current || 0;
-            onUpdate({
-              clGeneration: {
-                isLoading: status.state === 'running',
-                result: undefined,
-                planSteps: status.plan || result.plan_steps,
-                currentStep: current,
-              } as any,
-            });
-            if (status.state === 'completed') {
-              const app = await (api as any).getApplication(data.application!.id);
-              onUpdate({
-                clGeneration: {
-                  isLoading: false,
-                  result: app.cl_latex,
-                  planSteps: status.plan,
-                  currentStep: status.current,
-                } as any,
-                application: app,
-              });
-              if (pollHandle) window.clearInterval(pollHandle);
-            } else if (status.state === 'failed') {
-              onUpdate({
-                clGeneration: {
-                  isLoading: false,
-                  error: status.error || 'Generation failed',
-                  planSteps: status.plan,
-                  currentStep: status.current,
-                } as any,
-              });
-              if (pollHandle) window.clearInterval(pollHandle);
-            }
-          } catch (e) {}
-        }, pollInterval);
-      };
-      startPolling();
-
-      // Step 3: Rendering PDF
-      setCurrentStep('rendering');
-      await renderPdf();
-
-      // Complete
-      setCurrentStep('complete');
-
-      onUpdate({
-        clGeneration: {
-          isLoading: false,
-          result: result.cl_latex,
-          planSteps: result.plan_steps,
-        },
-        application: {
-          ...data.application,
-          cl_latex: result.cl_latex,
-        },
-      });
-
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to generate cover letter';
-      setError(errorMessage);
-      setCurrentStep('planning');
-
-      onUpdate({
-        clGeneration: {
-          isLoading: false,
-          error: errorMessage,
-        },
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRegenerate = async () => {
-    if (!data.application?.id) return;
-
-    setIsLoading(true);
-    setError(null);
-    setCurrentStep('planning');
-    onUpdate({ clGeneration: undefined });
-
-    // Clear previous PDF
-    if (clPdfUrl) {
-      URL.revokeObjectURL(clPdfUrl);
-      setClPdfUrl(null);
-    }
-
-    try {
-      // Step 1: Planning
-      setCurrentStep('planning');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Step 2: Executing plan
-      setCurrentStep('executing');
-      const result = await regenerateCoverLetter(data.application.id);
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      // Step 3: Rendering PDF
-      setCurrentStep('rendering');
-      await renderPdf();
-
-      // Complete
-      setCurrentStep('complete');
-
-      onUpdate({
-        clGeneration: {
-          isLoading: false,
-          result: result.cl_latex,
-          planSteps: result.plan_steps,
-        },
-        application: {
-          ...data.application,
-          cl_latex: result.cl_latex,
-        },
-      });
-
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to regenerate cover letter';
-      setError(errorMessage);
-      setCurrentStep('planning');
-
-      onUpdate({
-        clGeneration: {
-          isLoading: false,
-          error: errorMessage,
-        },
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const renderPdf = async () => {
-    if (!data.application?.id) return;
-    try {
-      const blob = await compilePdfServer(data.application.id, 'cl');
-      const url = URL.createObjectURL(blob);
-      if (clPdfUrl) URL.revokeObjectURL(clPdfUrl);
-      setClPdfUrl(url);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to render PDF';
-      setError(msg);
-      throw err;
-    }
+  const handleRegenerate = () => {
+    if (!data.application?.id || generateClMutation.isPending || regenerateClMutation.isPending) return;
+    regenerateClMutation.mutate(data.application.id);
   };
 
   const handleDownload = () => {
-    if (clPdfUrl) {
+    if (clPdfBlob) {
+      const url = URL.createObjectURL(clPdfBlob);
       const link = document.createElement('a');
-      link.href = clPdfUrl;
+      link.href = url;
       link.download = `CoverLetter_${data.application?.company}_${data.application?.title}.pdf`;
       link.click();
+      // Clean up the URL object
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     }
   };
+
+  // Combined loading state
+  const isLoading = generateClMutation.isPending || regenerateClMutation.isPending || isPdfLoading;
+
+  // Combined error state
+  const error = generateClMutation.error?.message || regenerateClMutation.error?.message || (pdfError as Error)?.message || data.clGeneration?.error;
 
   const getStepStatus = (stepId: GenerationStep) => {
     const stepOrder: GenerationStep[] = ['planning', 'executing', 'rendering', 'complete'];
@@ -323,12 +265,12 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
         )}
 
         {/* PDF Display */}
-        {clPdfUrl && currentStep === 'complete' && (
+        {clPdfBlob && currentStep === 'complete' && (
           <div className="mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-3">Generated Cover Letter</h3>
             <div className="bg-white p-2 rounded-md border">
-              <object data={clPdfUrl} type="application/pdf" width="100%" height="600">
-                <p>Your browser does not support embedded PDFs. <a href={clPdfUrl}>Download PDF</a>.</p>
+              <object data={URL.createObjectURL(clPdfBlob)} type="application/pdf" width="100%" height="600">
+                <p>Your browser does not support embedded PDFs. <a href={URL.createObjectURL(clPdfBlob)}>Download PDF</a>.</p>
               </object>
             </div>
             <div className="mt-4 flex justify-center space-x-4">

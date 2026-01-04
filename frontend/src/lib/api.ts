@@ -97,14 +97,6 @@ export async function compilePdf(applicationId: number, target: 'cv' | 'cl'): Pr
   return response.blob();
 }
 
-export async function getGenerationProgress(applicationId: number): Promise<any> {
-  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/progress`);
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to fetch generation progress: ${error}`);
-  }
-  return response.json();
-}
 
 export async function getApplication(applicationId: number): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/applications/${applicationId}`);

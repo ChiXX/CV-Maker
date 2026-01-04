@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { WizardData } from '@/types';
 import * as api from '@/lib/api';
 import { generateCv, regenerateCv, compilePdf as compilePdfServer } from '@/lib/api';
@@ -21,10 +22,9 @@ interface ProcessStep {
 }
 
 export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGenerationStepProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [cvPdfUrl, setCvPdfUrl] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState<GenerationStep>('planning');
+  const [generationStarted, setGenerationStarted] = useState(false);
 
   // processSteps will be derived from backend plan when available
   const dynamicPlanSteps = (data.cvGeneration as any)?.planSteps;
@@ -41,204 +41,143 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
         { id: 'complete', label: 'CV generation complete', status: 'pending' },
       ];
 
+  // Reset generation flag when application changes
+  useEffect(() => {
+    setGenerationStarted(false);
+  }, [data.application?.id]);
+
+  // PDF Query - only fetch when we have an application and CV is generated
+  const {
+    data: cvPdfBlob,
+    refetch: refetchPdf,
+    isLoading: isPdfLoading,
+    error: pdfError
+  } = useQuery({
+    queryKey: ['cv-pdf', data.application?.id],
+    queryFn: async () => {
+      if (!data.application?.id) throw new Error('No application ID');
+      return await compilePdfServer(data.application.id, 'cv');
+    },
+    enabled: !!data.application?.id && !!data.application?.cv_latex,
+    staleTime: Infinity, // Don't refetch automatically
+  });
+
+  // Generate CV Mutation
+  const generateCvMutation = useMutation({
+    mutationFn: async (applicationId: number) => {
+      setCurrentStep('planning');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate planning time
+
+      setCurrentStep('executing');
+      return await generateCv({ application_id: applicationId });
+    },
+    onSuccess: (result) => {
+      // Update state with generation result
+      onUpdate({
+        cvGeneration: {
+          isLoading: false,
+          result: result.cv_latex,
+          planSteps: result.plan_steps || [],
+          currentStep: result.plan_steps?.length || 0,
+        } as any,
+        application: data.application ? {
+          ...data.application,
+          cv_latex: result.cv_latex,
+        } : undefined,
+      });
+
+      setCurrentStep('rendering');
+      // PDF will be fetched automatically by the query when cv_latex is set
+
+      setCurrentStep('complete');
+    },
+    onError: (error: Error) => {
+      setCurrentStep('planning'); // Reset on error
+      onUpdate({
+        cvGeneration: {
+          isLoading: false,
+          error: error.message,
+        },
+      });
+    },
+  });
+
+  // Regenerate CV Mutation
+  const regenerateCvMutation = useMutation({
+    mutationFn: async (applicationId: number) => {
+      setCurrentStep('planning');
+      onUpdate({ cvGeneration: undefined });
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate planning time
+
+      setCurrentStep('executing');
+      return await regenerateCv(applicationId);
+    },
+    onSuccess: (result) => {
+      // Update state with regeneration result
+      onUpdate({
+        cvGeneration: {
+          isLoading: false,
+          result: result.cv_latex,
+          planSteps: result.plan_steps || [],
+          currentStep: result.plan_steps?.length || 0,
+        } as any,
+        application: data.application ? {
+          ...data.application,
+          cv_latex: result.cv_latex,
+        } : undefined,
+      });
+
+      setCurrentStep('rendering');
+      // Invalidate PDF query to refetch
+      queryClient.invalidateQueries({ queryKey: ['cv-pdf', data.application?.id] });
+
+      setCurrentStep('complete');
+    },
+    onError: (error: Error) => {
+      setCurrentStep('planning');
+      onUpdate({
+        cvGeneration: {
+          isLoading: false,
+          error: error.message,
+        },
+      });
+    },
+  });
+
   useEffect(() => {
     if (data.application?.cv_latex && !data.cvGeneration) {
       // CV is already generated, show completed state
       setCurrentStep('complete');
-      renderPdf();
-    } else if (!data.cvGeneration && data.application && !data.application.cv_latex) {
-      // Start CV generation process
-      generateCV();
+    } else if (!data.cvGeneration && data.application && !data.application.cv_latex && !generateCvMutation.isPending && !regenerateCvMutation.isPending && !generationStarted) {
+      // Start CV generation process (only once)
+      setGenerationStarted(true);
+      generateCvMutation.mutate(data.application.id);
     }
-  }, [data.application, data.cvGeneration]);
+  }, [data.application, data.cvGeneration, generateCvMutation.isPending, regenerateCvMutation.isPending, generationStarted]);
 
-  const generateCV = async () => {
-    if (!data.application?.id) return;
 
-    setIsLoading(true);
-    setError(null);
-    setCurrentStep('planning');
-
-    try {
-      // Step 1: Planning
-      setCurrentStep('planning');
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate planning time
-
-      // Step 2: Executing plan (this is where cv_generator.py:111 runs)
-      setCurrentStep('executing');
-      const result = await generateCv({ application_id: data.application.id });
-      // result contains plan_steps; start polling backend progress
-      onUpdate({
-        cvGeneration: {
-          isLoading: true,
-          result: undefined,
-          planSteps: result.plan_steps,
-          currentStep: 0,
-        } as any,
-      });
-
-      // start polling
-      const pollInterval = 1000;
-      let pollHandle: number | undefined;
-      const startPolling = () => {
-        pollHandle = window.setInterval(async () => {
-          try {
-            const status = await (api as any).getGenerationProgress(data.application!.id);
-            const current = status.current || 0;
-            onUpdate({
-              cvGeneration: {
-                isLoading: status.state === 'running',
-                result: undefined,
-                planSteps: status.plan || result.plan_steps,
-                currentStep: current,
-              } as any,
-            });
-            if (status.state === 'completed') {
-              // fetch updated application
-              const app = await (api as any).getApplication(data.application!.id);
-              onUpdate({
-                cvGeneration: {
-                  isLoading: false,
-                  result: app.cv_latex,
-                  planSteps: status.plan,
-                  currentStep: status.current,
-                } as any,
-                application: app,
-              });
-              if (pollHandle) window.clearInterval(pollHandle);
-            } else if (status.state === 'failed') {
-              onUpdate({
-                cvGeneration: {
-                  isLoading: false,
-                  error: status.error || 'Generation failed',
-                  planSteps: status.plan,
-                  currentStep: status.current,
-                } as any,
-              });
-              if (pollHandle) window.clearInterval(pollHandle);
-            }
-          } catch (e) {
-            // ignore transient errors
-          }
-        }, pollInterval);
-      };
-      startPolling();
-
-      // Step 3: Rendering PDF
-      setCurrentStep('rendering');
-      await renderPdf();
-
-      // Complete
-      setCurrentStep('complete');
-
-      onUpdate({
-        cvGeneration: {
-          isLoading: false,
-          result: result.cv_latex,
-          planSteps: result.plan_steps,
-        } as any,
-        application: {
-          ...data.application,
-          cv_latex: result.cv_latex,
-        },
-      });
-
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to generate CV';
-      setError(errorMessage);
-      setCurrentStep('planning'); // Reset on error
-
-      onUpdate({
-        cvGeneration: {
-          isLoading: false,
-          error: errorMessage,
-        },
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRegenerate = async () => {
-    if (!data.application?.id) return;
-
-    setIsLoading(true);
-    setError(null);
-    setCurrentStep('planning');
-    onUpdate({ cvGeneration: undefined });
-
-    // Clear previous PDF
-    if (cvPdfUrl) {
-      URL.revokeObjectURL(cvPdfUrl);
-      setCvPdfUrl(null);
-    }
-
-    try {
-      // Step 1: Planning
-      setCurrentStep('planning');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Step 2: Executing plan
-      setCurrentStep('executing');
-      const result = await regenerateCv(data.application.id);
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      // Step 3: Rendering PDF
-      setCurrentStep('rendering');
-      await renderPdf();
-
-      // Complete
-      setCurrentStep('complete');
-
-      onUpdate({
-        cvGeneration: {
-          isLoading: false,
-          result: result.cv_latex,
-        },
-        application: {
-          ...data.application,
-          cv_latex: result.cv_latex,
-        },
-      });
-
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to regenerate CV';
-      setError(errorMessage);
-      setCurrentStep('planning');
-
-      onUpdate({
-        cvGeneration: {
-          isLoading: false,
-          error: errorMessage,
-        },
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const renderPdf = async () => {
-    if (!data.application?.id) return;
-    try {
-      const blob = await compilePdfServer(data.application.id, 'cv');
-      const url = URL.createObjectURL(blob);
-      if (cvPdfUrl) URL.revokeObjectURL(cvPdfUrl);
-      setCvPdfUrl(url);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to render PDF';
-      setError(msg);
-      throw err; // Re-throw to be handled by caller
-    }
+  const handleRegenerate = () => {
+    if (!data.application?.id || generateCvMutation.isPending || regenerateCvMutation.isPending) return;
+    regenerateCvMutation.mutate(data.application.id);
   };
 
   const handleDownload = () => {
-    if (cvPdfUrl) {
+    if (cvPdfBlob) {
+      const url = URL.createObjectURL(cvPdfBlob);
       const link = document.createElement('a');
-      link.href = cvPdfUrl;
+      link.href = url;
       link.download = `CV_${data.application?.company}_${data.application?.title}.pdf`;
       link.click();
+      // Clean up the URL object
+      setTimeout(() => URL.revokeObjectURL(url), 100);
     }
   };
+
+  // Combined loading state
+  const isLoading = generateCvMutation.isPending || regenerateCvMutation.isPending || isPdfLoading;
+
+  // Combined error state
+  const error = generateCvMutation.error?.message || regenerateCvMutation.error?.message || (pdfError as Error)?.message || data.cvGeneration?.error;
 
   const getStepStatus = (stepId: GenerationStep) => {
     const stepOrder: GenerationStep[] = ['planning', 'executing', 'rendering', 'complete'];
@@ -326,12 +265,12 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
         )}
 
         {/* PDF Display */}
-        {cvPdfUrl && currentStep === 'complete' && (
+        {cvPdfBlob && currentStep === 'complete' && (
           <div className="mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-3">Generated CV</h3>
             <div className="bg-white p-2 rounded-md border">
-              <object data={cvPdfUrl} type="application/pdf" width="100%" height="600">
-                <p>Your browser does not support embedded PDFs. <a href={cvPdfUrl}>Download PDF</a>.</p>
+              <object data={URL.createObjectURL(cvPdfBlob)} type="application/pdf" width="100%" height="600">
+                <p>Your browser does not support embedded PDFs. <a href={URL.createObjectURL(cvPdfBlob)}>Download PDF</a>.</p>
               </object>
             </div>
             <div className="mt-4 flex justify-center space-x-4">
