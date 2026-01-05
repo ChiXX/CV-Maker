@@ -1,29 +1,39 @@
 # syntax=docker/dockerfile:1
-FROM node:20.11-alpine AS builder
+
+# 1. 基础阶段 (我们将其命名为 base)
+FROM node:20.11-alpine AS base
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
+# 禁用匿名遥测
 ENV NEXT_TELEMETRY_DISABLED 1
+COPY package*.json ./
+# 安装所有依赖（开发+生产）
+RUN npm install
 
-
+# 2. 开发阶段 (development)
+# 本地开发时，docker-compose 会使用 target: development
 FROM base AS development
 COPY . .
 EXPOSE 3000
-CMD ["npm", "run dev"]
+CMD ["npm", "run", "dev"]
 
+# 3. 构建阶段 (builder)
+# 专门用于在 Oracle 上进行重量级的 Next.js 编译
 FROM base AS builder
 COPY . .
-# 针对 Oracle 1G 内存的限制
+# 关键：利用你的 2G Swap，限制 Node 编译时最大使用 1024M 内存
 ENV NODE_OPTIONS="--max-old-space-size=1024"
 RUN npm run build
 
+# 4. 运行阶段 (runner)
+# 最终运行在 Oracle 上的轻量化镜像
 FROM node:20.11-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED 1
+# 运行时的内存限制，512M 足够
 ENV NODE_OPTIONS="--max-old-space-size=512"
 
-# 只拷贝生产环境必需的文件
+# 仅从 builder 阶段拷贝生成的产物，不拷贝源码，镜像体积骤减
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
