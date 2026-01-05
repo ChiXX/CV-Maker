@@ -59,6 +59,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: runner
     container_name: cv_maker_frontend
     environment:
       - NEXT_PUBLIC_API_URL=https://tycoola.edu.kg:2053 

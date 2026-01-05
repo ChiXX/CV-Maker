@@ -42,6 +42,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: development
     container_name: cv_maker_frontend_dev
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000

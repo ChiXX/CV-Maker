@@ -1,74 +1,20 @@
-# Python
+# 忽略 Python 缓存
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
 .venv/
-venv/
-ENV/
-env/
+.env
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# 忽略前端依赖和构建产物
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
 
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Git
+# 忽略系统和 Git 文件
 .git/
 .gitignore
-
-# Docker
-Dockerfile
+.vscode/
+.idea/
 docker-compose*.yml
-.dockerignore
-
-# Documentation
-README.md
-*.md
-
-# Test files
-tests/
-test_*.py
-*_test.py
-conftest.py
-
-# Application data
-Applications/
-*.log
-
-# Environment files
-.env*
-!.env.example
-
-# Temporary files
-tmp/
-temp/
+deploy_lightweight.sh
