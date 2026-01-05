@@ -1,4 +1,3 @@
-import os
 import re
 import requests
 from bs4 import BeautifulSoup
@@ -40,14 +39,22 @@ def extract_jd_from_url_with_llm(client, url):
             title = match_tt.group(1).strip()
 
         if jd == "[FAILED]":
-            raise Exception("Failed to extract job description from URL. The page may not be accessible or may require manual review.")
+            raise Exception(
+                "Failed to extract job description from URL. The page may not be accessible or may require manual review."
+            )
         if company == "[UNKNOWN]":
-            raise Exception("Failed to extract company from URL. The page may not be accessible or may require manual review.")
+            raise Exception(
+                "Failed to extract company from URL. The page may not be accessible or may require manual review."
+            )
         if title == "[UNKNOWN]":
-            raise Exception("Failed to extract title from URL. The page may not be accessible or may require manual review.")
+            raise Exception(
+                "Failed to extract title from URL. The page may not be accessible or may require manual review."
+            )
 
         print(f"✅ Extraction completed → Company: {company}, Title: {title}")
         return jd, company, title
 
     except Exception as e:
-        raise Exception(f"Failed to fetch job page: {str(e)}. Please verify the URL is accessible.")
+        raise Exception(
+            f"Failed to fetch job page: {str(e)}. Please verify the URL is accessible."
+        )

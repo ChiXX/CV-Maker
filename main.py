@@ -35,7 +35,7 @@ if __name__ == "__main__":
         company=company,
         title=title,
         cv_latex=cv_latex,
-        cl_latex=cl_latex
+        cl_latex=cl_latex,
     )
 
     # Save to database

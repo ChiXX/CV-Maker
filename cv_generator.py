@@ -1,6 +1,4 @@
-import os
 import re
-from typing import List, Dict, Any
 from planner_and_solver import Planner, Solver
 from shared_prompts import CV_PLANNER_PROMPT, CV_SOLVER_PROMPT
 from shared_resume import resume_data
@@ -18,7 +16,7 @@ def compile_cv_tex(client, jd_text):
     solver = Solver(client, CV_SOLVER_PROMPT, jd_text, resume_data)
 
     plan = planner.build_plan()
-    new_summary = solver.execute(plan, mode='cv')
+    new_summary = solver.execute(plan, mode="cv")
 
     tex_text_updated = re.sub(
         r"(\\cvparagraph\{)(.*?)(\})",
@@ -30,5 +28,3 @@ def compile_cv_tex(client, jd_text):
     print(f"✅ CV LaTeX: {new_summary}")
 
     return tex_text_updated, new_summary, plan
-
-

@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /app/.venv /app/.venv
 
-COPY app.py cl_generator.py cv_generator.py jd_generator.py database.py models.py prompts.py ./
+COPY app.py cl_generator.py cv_generator.py jd_generator.py database.py models.py shared_resume.py shared_prompts.py planner_and_solver.py ./
 COPY latex_cl/ ./latex_cl/
 COPY latex_cv/ ./latex_cv/
 
