@@ -12,14 +12,12 @@ def compile_cl_tex(client, jd_text, company, title, cv_latex, interactive=False)
     with open(main_tex_file, "r", encoding="utf-8") as f:
         tex_text = f.read()
 
-    # Plan and solve for cover letter generation
-    # planner = Planner(client, CL_PLANNER_PROMPT)
-    # solver = Solver(client, CL_SOLVER_PROMPT, cv_latex)
+    # === Plan and solve for cover letter generation ===
+    planner = Planner(client, CL_PLANNER_PROMPT, jd_text)
+    solver = Solver(client, CL_SOLVER_PROMPT, jd_text, cv_latex)
 
-    # plan = planner.build_plan(jd_text, cv_latex)
-    # letter_body = solver.execute(plan, jd_text, company=company, title=title, cv_latex=cv_latex)
-    plan = ["test","test2"]
-    letter_body = "test"
+    plan = planner.build_plan()
+    letter_body = solver.execute(plan, mode='cl')
     # Format for LaTeX
     formatted_paragraphs = [
         line.strip() for line in letter_body.split("\n") if line.strip()
@@ -27,8 +25,7 @@ def compile_cl_tex(client, jd_text, company, title, cv_latex, interactive=False)
     formatted_letter = "\n\n\\vspace{0.5cm}\n\n".join(formatted_paragraphs)
     new_tex = tex_text.replace("% Inject here", formatted_letter)
 
-    preview = letter_body if len(letter_body) < 500 else letter_body[:500] + "..."
-    print(f"✅ CL LaTeX generated: {preview}")
+    print(f"✅ CL LaTeX generated")
 
     return new_tex, letter_body, plan
 

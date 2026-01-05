@@ -18,7 +18,7 @@ def compile_cv_tex(client, jd_text):
     solver = Solver(client, CV_SOLVER_PROMPT, jd_text, resume_data)
 
     plan = planner.build_plan()
-    new_summary = solver.execute(plan)
+    new_summary = solver.execute(plan, mode='cv')
 
     tex_text_updated = re.sub(
         r"(\\cvparagraph\{)(.*?)(\})",

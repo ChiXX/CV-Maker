@@ -41,7 +41,6 @@ class Planner:
                 raise ValueError("No list found")
             
             plans = ast.literal_eval(match.group(0))
-            print( "plans: ", plans)
             return plans
 
         except Exception as e:
@@ -57,21 +56,21 @@ class Solver:
         self.jd_text = jd_text
         self.resume_data = resume_data
 
-    def execute(self, plan: List[str]) -> str:
+    def execute(self, plan: List[str], mode: str = 'cv') -> str:
         """Execute the comprehensive plan."""
-        
+
         current_date = datetime.now().strftime("%Y-%m-%d")
         history = ""
         last_final_answer = ""
-        
+
         try:
             for i, step in enumerate(plan):
                 prompt = self.prompt_template.format(
-                    plan=plan, 
-                    step=step.split(":")[-1] + "Max 150 chars" if i == len(plan) - 1 else "", 
-                    history=history, 
-                    jd_text=self.jd_text, 
-                    resume_data=self.resume_data, 
+                    plan=plan,
+                    step=step + ("Max 150 chars" if i == len(plan) - 1 and mode=='cl' else ""),
+                    history=history,
+                    jd_text=self.jd_text,
+                    resume_data=self.resume_data,
                     current_date=current_date
                 )
 
@@ -90,14 +89,9 @@ class Solver:
                     step_result = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL).strip()
                 
                 step_result = step_result.strip(' "\'*-•')
-                print('*'*10)
-                print(step)
-                print('-'*10)
-                print(step_result)
-                print('*'*10)
                 if i == len(plan) - 1:
                     # Final headline polish
-                    last_final_answer = step_result.split('\n')[0] 
+                    last_final_answer = step_result.split('\n')[0] if mode == "cv" else step_result
                 else:
                     last_final_answer = step_result
 
