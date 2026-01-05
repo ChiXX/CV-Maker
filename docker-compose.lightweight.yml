@@ -31,6 +31,7 @@ services:
   # 后端服务
   api:
     build: .
+    image: bionamicxu/cv-api:latest
     container_name: cv_maker_api_light
     environment:
       DATABASE_URL: postgresql://cv_user:cv_password@postgres:5432/cv_maker
@@ -56,6 +57,7 @@ services:
 
   # 前端服务
   frontend:
+    image: bionamicxu/cv-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile

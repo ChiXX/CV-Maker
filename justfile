@@ -6,7 +6,7 @@ default:
 
 # Development Environment
 dev-build:
-    docker-compose -f docker-compose.dev.yml build
+    docker-compose -f docker-compose.dev.yml build --no-cache
 
 dev-up:
     docker-compose -f docker-compose.dev.yml up api postgres
@@ -22,7 +22,7 @@ dev-ui-down:
 
 # Production Deployment
 deploy-build:
-    docker-compose -f docker-compose.lightweight.yml build
+    docker-compose -f docker-compose.lightweight.yml build --no-cache
 
 deploy-up:
     docker-compose -f docker-compose.lightweight.yml up -d
