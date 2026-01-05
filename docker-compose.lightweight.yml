@@ -52,7 +52,7 @@ services:
     deploy:
       resources:
         limits:
-          memory
+          memory: 256M
 
   # 前端服务
   frontend:
@@ -70,7 +70,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256MB 
+          memory: 256M
 
 volumes:
   postgres_data:
