@@ -6,8 +6,8 @@ resume_data = {
     'tools': ['Docker', 'GitLab CI/CD', 'GitHub Actions', 'AWS', 'Playwright', 'Jinja2'],
     'domains': ['Full Stack Development', 'Bioinformatics', 'Biomedical Engineering', 'Machine Learning'],
     'experience': {
-        'SAGA Diagnostics': 'Nov 2023 - Present (~1 year)',
-        'Bionamic': 'Mar 2022 - Oct 2023 (~1.6 years)',
-        'total_years': '~2.6 years'
+        'SAGA Diagnostics': 'Nov 2023 - Present',
+        'Bionamic': 'Mar 2022 - Oct 2023',
+        'Total Years': '3.8 years'
     }
 }

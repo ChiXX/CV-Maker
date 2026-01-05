@@ -1,15 +1,9 @@
 import os
 import re
 from typing import List, Dict, Any
-from shared_planner import Planner, Solver
+from planner_and_solver import Planner, Solver
 from shared_prompts import CL_PLANNER_PROMPT, CL_SOLVER_PROMPT
 from shared_resume import resume_data
-
-
-
-
-
-
 
 def compile_cl_tex(client, jd_text, company, title, cv_latex, interactive=False):
     main_tex_file = "./latex_cl/sample.tex"
@@ -33,10 +27,9 @@ def compile_cl_tex(client, jd_text, company, title, cv_latex, interactive=False)
     formatted_letter = "\n\n\\vspace{0.5cm}\n\n".join(formatted_paragraphs)
     new_tex = tex_text.replace("% Inject here", formatted_letter)
 
-    # Print a short preview for logs
     preview = letter_body if len(letter_body) < 500 else letter_body[:500] + "..."
     print(f"✅ CL LaTeX generated: {preview}")
-    # Return new tex, the letter body, and the plan steps for frontend display
+
     return new_tex, letter_body, plan
 
 

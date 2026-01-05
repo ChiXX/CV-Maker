@@ -11,7 +11,6 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from cv_generator import compile_cv_tex
 from cl_generator import compile_cl_tex
-from shared_planner import Planner, Solver
 from jd_generator import extract_jd_from_url_with_llm
 from database import get_db_dependency, init_db, create_tables
 from models import Application
@@ -211,9 +210,6 @@ async def regenerate_job_details(
         raise HTTPException(status_code=500, detail=f"Failed to regenerate job details: {str(e)}")
 
 
- 
-
-
 @app.post("/applications/{application_id}/cv", response_model=CvGenerationResponse)
 async def generate_cv(
     application_id: int,
@@ -226,6 +222,10 @@ async def generate_cv(
         application = db.query(Application).filter(Application.id == application_id).first()
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
+
+        # Check if CV already exists
+        if application.cv_latex:
+            return CvGenerationResponse(cv_latex=application.cv_latex, plan_steps=None)
 
         # Generate CV LaTeX directly
         cv_latex, new_summary, plan_steps = compile_cv_tex(client, application.jd_text)
@@ -274,6 +274,10 @@ async def generate_cover_letter(
         application = db.query(Application).filter(Application.id == application_id).first()
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
+
+        # Check if CL already exists
+        if application.cl_latex:
+            return ClGenerationResponse(cl_latex=application.cl_latex, plan_steps=None)
 
         # Generate CL LaTeX directly
         cl_latex, letter_body, plan_steps = compile_cl_tex(client, application.jd_text, application.company, application.title, application.cv_latex)

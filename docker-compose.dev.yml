@@ -29,7 +29,7 @@ services:
       PYTHONPATH: /app
     volumes:
       - .:/app
-      - /app/.venv  # 👈 匿名卷：保护容器内的依赖不被覆盖
+      - /app/.venv  
     ports:
       - "8000:8000"
     depends_on:
