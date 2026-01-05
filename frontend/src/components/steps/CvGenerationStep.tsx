@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { WizardData } from '@/types';
-import * as api from '@/lib/api';
 import { generateCv, regenerateCv, compilePdf as compilePdfServer } from '@/lib/api';
 
 interface CvGenerationStepProps {
@@ -24,99 +23,37 @@ interface ProcessStep {
 export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGenerationStepProps) {
   const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState<GenerationStep>('planning');
-  const [generationStarted, setGenerationStarted] = useState(false);
 
-  // processSteps will be derived from backend plan when available
-  const dynamicPlanSteps = (data.cvGeneration as any)?.planSteps;
-  const processSteps: ProcessStep[] = dynamicPlanSteps
-    ? dynamicPlanSteps.map((label: string, idx: number) => ({
-        id: (['planning', 'executing', 'rendering', 'complete'][Math.min(idx, 3)] as GenerationStep),
-        label,
-        status: 'pending' as const,
-      }))
-    : [
-        { id: 'planning', label: 'Generating plans', status: 'pending' },
-        { id: 'executing', label: 'Executing plan steps', status: 'pending' },
-        { id: 'rendering', label: 'Rendering PDF', status: 'pending' },
-        { id: 'complete', label: 'CV generation complete', status: 'pending' },
-      ];
-
-  // Reset generation flag when application changes
-  useEffect(() => {
-    setGenerationStarted(false);
-  }, [data.application?.id]);
-
-  // PDF Query - only fetch when we have an application and CV is generated
-  const {
-    data: cvPdfBlob,
-    refetch: refetchPdf,
-    isLoading: isPdfLoading,
-    error: pdfError
+  // 1. Initial CV Generation Query
+  // useQuery handles de-duplication automatically, preventing double calls
+  const { 
+    data: generationResult,
+    isLoading: isGenerating,
+    error: genError 
   } = useQuery({
-    queryKey: ['cv-pdf', data.application?.id],
+    queryKey: ['generate-cv', data.application?.id],
     queryFn: async () => {
-      if (!data.application?.id) throw new Error('No application ID');
-      return await compilePdfServer(data.application.id, 'cv');
-    },
-    enabled: !!data.application?.id && !!data.application?.cv_latex,
-    staleTime: Infinity, // Don't refetch automatically
-  });
-
-  // Generate CV Mutation
-  const generateCvMutation = useMutation({
-    mutationFn: async (applicationId: number) => {
-      setCurrentStep('planning');
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate planning time
-
+      // Transition UI steps as the query progresses
       setCurrentStep('executing');
-      return await generateCv({ application_id: applicationId });
+      return await generateCv({ application_id: data.application!.id });
     },
-    onSuccess: (result) => {
-      // Update state with generation result
-      onUpdate({
-        cvGeneration: {
-          isLoading: false,
-          result: result.cv_latex,
-          planSteps: result.plan_steps || [],
-          currentStep: result.plan_steps?.length || 0,
-        } as any,
-        application: data.application ? {
-          ...data.application,
-          cv_latex: result.cv_latex,
-        } : undefined,
-      });
-
-      setCurrentStep('rendering');
-      // PDF will be fetched automatically by the query when cv_latex is set
-
-      setCurrentStep('complete');
-    },
-    onError: (error: Error) => {
-      setCurrentStep('planning'); // Reset on error
-      onUpdate({
-        cvGeneration: {
-          isLoading: false,
-          error: error.message,
-        },
-      });
-    },
+    // Only run if we have an ID and haven't generated/updated the parent state yet
+    enabled: !!data.application?.id && !data.application?.cv_latex,
+    staleTime: Infinity,
   });
 
-  // Regenerate CV Mutation
+  // 2. Manual Redo Mutation
   const regenerateCvMutation = useMutation({
     mutationFn: async (applicationId: number) => {
       setCurrentStep('planning');
       onUpdate({ cvGeneration: undefined });
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate planning time
-
+      await new Promise(resolve => setTimeout(resolve, 500)); // Brief pause for UX
       setCurrentStep('executing');
       return await regenerateCv(applicationId);
     },
     onSuccess: (result) => {
-      // Update state with regeneration result
       onUpdate({
         cvGeneration: {
-          isLoading: false,
           result: result.cv_latex,
           planSteps: result.plan_steps || [],
           currentStep: result.plan_steps?.length || 0,
@@ -126,38 +63,51 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
           cv_latex: result.cv_latex,
         } : undefined,
       });
-
       setCurrentStep('rendering');
-      // Invalidate PDF query to refetch
       queryClient.invalidateQueries({ queryKey: ['cv-pdf', data.application?.id] });
-
       setCurrentStep('complete');
-    },
-    onError: (error: Error) => {
-      setCurrentStep('planning');
-      onUpdate({
-        cvGeneration: {
-          isLoading: false,
-          error: error.message,
-        },
-      });
     },
   });
 
-  useEffect(() => {
-    if (data.application?.cv_latex && !data.cvGeneration) {
-      // CV is already generated, show completed state
-      setCurrentStep('complete');
-    } else if (!data.cvGeneration && data.application && !data.application.cv_latex && !generateCvMutation.isPending && !regenerateCvMutation.isPending && !generationStarted) {
-      // Start CV generation process (only once)
-      setGenerationStarted(true);
-      generateCvMutation.mutate(data.application.id);
-    }
-  }, [data.application, data.cvGeneration, generateCvMutation.isPending, regenerateCvMutation.isPending, generationStarted]);
+  // 3. PDF Compilation Query
+  const {
+    data: cvPdfBlob,
+    isLoading: isPdfLoading,
+    error: pdfError
+  } = useQuery({
+    queryKey: ['cv-pdf', data.application?.id, data.application?.cv_latex],
+    queryFn: () => compilePdfServer(data.application!.id, 'cv'),
+    enabled: !!data.application?.id && !!data.application?.cv_latex,
+    staleTime: Infinity,
+  });
 
+  // Sync auto-generation result to parent wizard state
+  useEffect(() => {
+    if (generationResult && !data.application?.cv_latex) {
+      onUpdate({
+        cvGeneration: {
+          result: generationResult.cv_latex,
+          planSteps: generationResult.plan_steps || [],
+          isLoading: false 
+        } as any,
+        application: { 
+          ...data.application!, 
+          cv_latex: generationResult.cv_latex 
+        }
+      });
+      setCurrentStep('rendering');
+    }
+  }, [generationResult, data.application, onUpdate]);
+
+  // Update step to 'complete' once PDF is ready
+  useEffect(() => {
+    if (cvPdfBlob && !isGenerating && !regenerateCvMutation.isPending) {
+      setCurrentStep('complete');
+    }
+  }, [cvPdfBlob, isGenerating, regenerateCvMutation.isPending]);
 
   const handleRegenerate = () => {
-    if (!data.application?.id || generateCvMutation.isPending || regenerateCvMutation.isPending) return;
+    if (!data.application?.id || isGenerating || regenerateCvMutation.isPending) return;
     regenerateCvMutation.mutate(data.application.id);
   };
 
@@ -168,16 +118,19 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
       link.href = url;
       link.download = `CV_${data.application?.company}_${data.application?.title}.pdf`;
       link.click();
-      // Clean up the URL object
       setTimeout(() => URL.revokeObjectURL(url), 100);
     }
   };
 
-  // Combined loading state
-  const isLoading = generateCvMutation.isPending || regenerateCvMutation.isPending || isPdfLoading;
+  // Derived states
+  const isLoading = isGenerating || regenerateCvMutation.isPending || isPdfLoading;
+  const error = genError?.message || regenerateCvMutation.error?.message || (pdfError as Error)?.message;
 
-  // Combined error state
-  const error = generateCvMutation.error?.message || regenerateCvMutation.error?.message || (pdfError as Error)?.message || data.cvGeneration?.error;
+  const processSteps: ProcessStep[] = [
+    { id: 'planning', label: 'Analyzing Job Description', status: 'pending' },
+    { id: 'executing', label: 'Generating LaTeX Content', status: 'pending' },
+    { id: 'rendering', label: 'Compiling PDF Document', status: 'pending' },
+  ];
 
   const getStepStatus = (stepId: GenerationStep) => {
     const stepOrder: GenerationStep[] = ['planning', 'executing', 'rendering', 'complete'];
@@ -187,7 +140,7 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
     if (stepIndex < currentIndex) return 'completed';
     if (stepIndex === currentIndex && isLoading) return 'loading';
     if (stepIndex === currentIndex && !isLoading && !error) return 'completed';
-    if (error && stepId === 'planning') return 'error';
+    if (error && stepIndex === currentIndex) return 'error';
     return 'pending';
   };
 

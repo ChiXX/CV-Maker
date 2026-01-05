@@ -228,7 +228,6 @@ async def generate_cv(
             raise HTTPException(status_code=404, detail="Application not found")
 
         # Generate CV LaTeX directly
-        print("1")
         cv_latex, new_summary, plan_steps = compile_cv_tex(client, application.jd_text)
         # Update application
         application.cv_latex = cv_latex

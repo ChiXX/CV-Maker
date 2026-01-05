@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query'; // Added
 import { WizardData, WizardStep } from '@/types';
 import { StepIndicator } from './StepIndicator';
 import { UrlInputStep } from './steps/UrlInputStep';
@@ -16,6 +17,7 @@ const steps: WizardStep[] = [
 ];
 
 export function Wizard() {
+  const queryClient = useQueryClient(); // Access the query client
   const [currentStep, setCurrentStep] = useState(1);
   const [wizardData, setWizardData] = useState<WizardData>({
     url: '',
@@ -23,6 +25,18 @@ export function Wizard() {
 
   const updateWizardData = (updates: Partial<WizardData>) => {
     setWizardData(prev => ({ ...prev, ...updates }));
+  };
+
+  // Improved reset function
+  const handleRestart = () => {
+    // 1. Clear the entire query cache so new URLs/IDs don't collide with old ones
+    queryClient.clear(); 
+    
+    // 2. Reset local state
+    setWizardData({ url: '' });
+    
+    // 3. Go back to step 1
+    setCurrentStep(1);
   };
 
   const nextStep = () => {
@@ -76,11 +90,7 @@ export function Wizard() {
           <ClGenerationStep
             data={wizardData}
             onUpdate={updateWizardData}
-            onNext={() => {
-              // Since we removed step 5, after step 4 we should restart
-              setCurrentStep(1);
-              setWizardData({ url: '' });
-            }}
+            onNext={handleRestart} // Use the new reset handler
             onPrev={prevStep}
           />
         );

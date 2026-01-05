@@ -10,6 +10,7 @@ interface UrlInputStepProps {
 export function UrlInputStep({ data, onUpdate, onNext }: UrlInputStepProps) {
   const [url, setUrl] = useState(data.url);
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validateUrl = (url: string) => {
     try {
@@ -22,17 +23,19 @@ export function UrlInputStep({ data, onUpdate, onNext }: UrlInputStepProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
+    if (isSubmitting) return; // Prevent rapid double-clicks
+  
     if (!url.trim()) {
       setError('Please enter a job posting URL');
       return;
     }
-
+  
     if (!validateUrl(url)) {
       setError('Please enter a valid URL');
       return;
     }
-
+  
+    setIsSubmitting(true);
     setError('');
     onUpdate({ url: url.trim() });
     onNext();
@@ -71,9 +74,10 @@ export function UrlInputStep({ data, onUpdate, onNext }: UrlInputStepProps) {
 
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            disabled={isSubmitting}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
-            Extract Job Details
+            {isSubmitting ? 'Processing...' : 'Extract Job Details'}
           </button>
         </form>
       </div>

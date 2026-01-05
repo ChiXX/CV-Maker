@@ -3,6 +3,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { WizardData } from '@/types';
 import { extractJobDetails as apiExtractJobDetails, regenerateJobDetails } from '@/lib/api';
+import { useEffect } from 'react';
 
 interface ExtractionStepProps {
   data: WizardData;
@@ -13,30 +14,45 @@ interface ExtractionStepProps {
 
 export function ExtractionStep({ data, onUpdate, onNext, onPrev }: ExtractionStepProps) {
   
-  // 1. Initial Extraction Query
-  // This replaces the useEffect. It only runs if 'enabled' is true.
   const { 
+    data: extractionResult, // Capture the result
     isLoading: isExtracting, 
     error: extractError, 
     refetch: handleRetry 
   } = useQuery({
     queryKey: ['extractJob', data.url],
-    queryFn: async () => {
-      const result = await apiExtractJobDetails({ job_url: data.url });
+    queryFn: () => apiExtractJobDetails({ job_url: data.url }), // Pure fetch
+    enabled: !!data.url && !data.extractedData,
+    staleTime: Infinity,
+  });
+
+  // Sync extraction result to parent state safely
+  useEffect(() => {
+    if (extractionResult && !data.extractedData) {
       onUpdate({
         extractedData: {
-          company: result.company,
-          title: result.title,
-          jd_text: result.jd_text,
+          company: extractionResult.company,
+          title: extractionResult.title,
+          jd_text: extractionResult.jd_text,
         },
-        application: result,
+        application: extractionResult,
       });
-      return result;
-    },
-    // Only fetch if we have a URL and don't already have data
-    enabled: !!data.url && !data.extractedData,
-    staleTime: Infinity, // Don't refetch automatically
-  });
+    }
+  }, [extractionResult, data.extractedData, onUpdate]);
+
+  // Sync extraction result to parent state safely
+  useEffect(() => {
+    if (extractionResult && !data.extractedData) {
+      onUpdate({
+        extractedData: {
+          company: extractionResult.company,
+          title: extractionResult.title,
+          jd_text: extractionResult.jd_text,
+        },
+        application: extractionResult,
+      });
+    }
+  }, [extractionResult, data.extractedData, onUpdate]);
 
   // 2. Regenerate Mutation
   // Used for manual actions that change data on the server

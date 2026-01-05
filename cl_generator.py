@@ -35,7 +35,7 @@ def compile_cl_tex(client, jd_text, company, title, cv_latex, interactive=False)
 
     # Print a short preview for logs
     preview = letter_body if len(letter_body) < 500 else letter_body[:500] + "..."
-    print(f"✅ CL LaTeX generated (preview): {preview}")
+    print(f"✅ CL LaTeX generated: {preview}")
     # Return new tex, the letter body, and the plan steps for frontend display
     return new_tex, letter_body, plan
 

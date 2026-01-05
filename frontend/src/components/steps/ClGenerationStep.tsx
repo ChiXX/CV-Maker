@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { WizardData } from '@/types';
-import * as api from '@/lib/api';
 import { generateCoverLetter, regenerateCoverLetter, compilePdf as compilePdfServer } from '@/lib/api';
 
 interface ClGenerationStepProps {
@@ -24,99 +23,36 @@ interface ProcessStep {
 export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGenerationStepProps) {
   const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState<GenerationStep>('planning');
-  const [generationStarted, setGenerationStarted] = useState(false);
 
-  // processSteps will be derived from backend plan when available
-  const dynamicPlanSteps = (data.clGeneration as any)?.planSteps;
-  const processSteps: ProcessStep[] = dynamicPlanSteps
-    ? dynamicPlanSteps.map((label: string, idx: number) => ({
-        id: (['planning', 'executing', 'rendering', 'complete'][Math.min(idx, 3)] as GenerationStep),
-        label,
-        status: 'pending' as const,
-      }))
-    : [
-        { id: 'planning', label: 'Generating plans', status: 'pending' },
-        { id: 'executing', label: 'Executing plan steps', status: 'pending' },
-        { id: 'rendering', label: 'Rendering PDF', status: 'pending' },
-        { id: 'complete', label: 'Cover letter generation complete', status: 'pending' },
-      ];
-
-  // Reset generation flag when application changes
-  useEffect(() => {
-    setGenerationStarted(false);
-  }, [data.application?.id]);
-
-  // PDF Query - only fetch when we have an application and CL is generated
-  const {
-    data: clPdfBlob,
-    refetch: refetchPdf,
-    isLoading: isPdfLoading,
-    error: pdfError
+  // 1. Initial Cover Letter Generation Query
+  // useQuery handles de-duplication automatically, preventing double calls during mount
+  const { 
+    data: generationResult,
+    isLoading: isGenerating,
+    error: genError 
   } = useQuery({
-    queryKey: ['cl-pdf', data.application?.id],
+    queryKey: ['generate-cl', data.application?.id],
     queryFn: async () => {
-      if (!data.application?.id) throw new Error('No application ID');
-      return await compilePdfServer(data.application.id, 'cl');
-    },
-    enabled: !!data.application?.id && !!data.application?.cl_latex,
-    staleTime: Infinity, // Don't refetch automatically
-  });
-
-  // Generate CL Mutation
-  const generateClMutation = useMutation({
-    mutationFn: async (applicationId: number) => {
-      setCurrentStep('planning');
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate planning time
-
       setCurrentStep('executing');
-      return await generateCoverLetter({ application_id: applicationId });
+      return await generateCoverLetter({ application_id: data.application!.id });
     },
-    onSuccess: (result) => {
-      // Update state with generation result
-      onUpdate({
-        clGeneration: {
-          isLoading: false,
-          result: result.cl_latex,
-          planSteps: result.plan_steps || [],
-          currentStep: result.plan_steps?.length || 0,
-        } as any,
-        application: data.application ? {
-          ...data.application,
-          cl_latex: result.cl_latex,
-        } : undefined,
-      });
-
-      setCurrentStep('rendering');
-      // PDF will be fetched automatically by the query when cl_latex is set
-
-      setCurrentStep('complete');
-    },
-    onError: (error: Error) => {
-      setCurrentStep('planning'); // Reset on error
-      onUpdate({
-        clGeneration: {
-          isLoading: false,
-          error: error.message,
-        },
-      });
-    },
+    // Only run if we have an application and no cover letter has been generated yet
+    enabled: !!data.application?.id && !data.application?.cl_latex,
+    staleTime: Infinity,
   });
 
-  // Regenerate CL Mutation
+  // 2. Manual Regeneration Mutation
   const regenerateClMutation = useMutation({
     mutationFn: async (applicationId: number) => {
       setCurrentStep('planning');
       onUpdate({ clGeneration: undefined });
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate planning time
-
+      await new Promise(resolve => setTimeout(resolve, 500)); // Brief UX pause
       setCurrentStep('executing');
       return await regenerateCoverLetter(applicationId);
     },
     onSuccess: (result) => {
-      // Update state with regeneration result
       onUpdate({
         clGeneration: {
-          isLoading: false,
           result: result.cl_latex,
           planSteps: result.plan_steps || [],
           currentStep: result.plan_steps?.length || 0,
@@ -126,38 +62,51 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
           cl_latex: result.cl_latex,
         } : undefined,
       });
-
       setCurrentStep('rendering');
-      // Invalidate PDF query to refetch
+      // Invalidate PDF query to force a fresh compile
       queryClient.invalidateQueries({ queryKey: ['cl-pdf', data.application?.id] });
-
-      setCurrentStep('complete');
-    },
-    onError: (error: Error) => {
-      setCurrentStep('planning');
-      onUpdate({
-        clGeneration: {
-          isLoading: false,
-          error: error.message,
-        },
-      });
     },
   });
 
-  useEffect(() => {
-    if (data.application?.cl_latex && !data.clGeneration) {
-      // CL is already generated, show completed state
-      setCurrentStep('complete');
-    } else if (!data.clGeneration && data.application && !data.application.cl_latex && !generateClMutation.isPending && !regenerateClMutation.isPending && !generationStarted) {
-      // Start CL generation process (only once)
-      setGenerationStarted(true);
-      generateClMutation.mutate(data.application.id);
-    }
-  }, [data.application, data.clGeneration, generateClMutation.isPending, regenerateClMutation.isPending, generationStarted]);
+  // 3. PDF Compilation Query
+  const {
+    data: clPdfBlob,
+    isLoading: isPdfLoading,
+    error: pdfError
+  } = useQuery({
+    queryKey: ['cl-pdf', data.application?.id, data.application?.cl_latex],
+    queryFn: () => compilePdfServer(data.application!.id, 'cl'),
+    enabled: !!data.application?.id && !!data.application?.cl_latex,
+    staleTime: Infinity,
+  });
 
+  // Sync auto-generation result to parent state
+  useEffect(() => {
+    if (generationResult && !data.application?.cl_latex) {
+      onUpdate({
+        clGeneration: {
+          result: generationResult.cl_latex,
+          planSteps: generationResult.plan_steps || [],
+          isLoading: false 
+        } as any,
+        application: { 
+          ...data.application!, 
+          cl_latex: generationResult.cl_latex 
+        }
+      });
+      setCurrentStep('rendering');
+    }
+  }, [generationResult, data.application, onUpdate]);
+
+  // Transition to complete when PDF is ready
+  useEffect(() => {
+    if (clPdfBlob && !isGenerating && !regenerateClMutation.isPending) {
+      setCurrentStep('complete');
+    }
+  }, [clPdfBlob, isGenerating, regenerateClMutation.isPending]);
 
   const handleRegenerate = () => {
-    if (!data.application?.id || generateClMutation.isPending || regenerateClMutation.isPending) return;
+    if (!data.application?.id || isGenerating || regenerateClMutation.isPending) return;
     regenerateClMutation.mutate(data.application.id);
   };
 
@@ -168,16 +117,18 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
       link.href = url;
       link.download = `CoverLetter_${data.application?.company}_${data.application?.title}.pdf`;
       link.click();
-      // Clean up the URL object
       setTimeout(() => URL.revokeObjectURL(url), 100);
     }
   };
 
-  // Combined loading state
-  const isLoading = generateClMutation.isPending || regenerateClMutation.isPending || isPdfLoading;
+  const isLoading = isGenerating || regenerateClMutation.isPending || isPdfLoading;
+  const error = genError?.message || regenerateClMutation.error?.message || (pdfError as Error)?.message;
 
-  // Combined error state
-  const error = generateClMutation.error?.message || regenerateClMutation.error?.message || (pdfError as Error)?.message || data.clGeneration?.error;
+  const processSteps: ProcessStep[] = [
+    { id: 'planning', label: 'Drafting Cover Letter', status: 'pending' },
+    { id: 'executing', label: 'Tailoring Content', status: 'pending' },
+    { id: 'rendering', label: 'Generating PDF', status: 'pending' },
+  ];
 
   const getStepStatus = (stepId: GenerationStep) => {
     const stepOrder: GenerationStep[] = ['planning', 'executing', 'rendering', 'complete'];
@@ -187,7 +138,7 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
     if (stepIndex < currentIndex) return 'completed';
     if (stepIndex === currentIndex && isLoading) return 'loading';
     if (stepIndex === currentIndex && !isLoading && !error) return 'completed';
-    if (error && stepId === 'planning') return 'error';
+    if (error && stepIndex === currentIndex) return 'error';
     return 'pending';
   };
 
