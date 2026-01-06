@@ -19,8 +19,12 @@ CMD ["npm", "run", "dev"]
 # 3. 构建阶段 (builder)
 # 专门用于在 Oracle 上进行重量级的 Next.js 编译
 FROM base AS builder
+# --- ADD THESE LINES ---
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# -----------------------
+
 COPY . .
-# 关键：利用你的 2G Swap，限制 Node 编译时最大使用 1024M 内存
 ENV NODE_OPTIONS="--max-old-space-size=1024"
 RUN npm run build
 
