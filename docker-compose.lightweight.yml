@@ -30,8 +30,7 @@ services:
 
   # 后端服务
   api:
-    build: .
-    image: bionamicxu/cv-api:latest
+    build: .  # 在服务器本地构建
     container_name: cv_maker_api_light
     environment:
       DATABASE_URL: postgresql://cv_user:cv_password@postgres:5432/cv_maker
@@ -57,14 +56,14 @@ services:
 
   # 前端服务
   frontend:
-    image: bionamicxu/cv-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
       target: runner
+      # 关键修改：在构建阶段传入环境变量
+      args:
+        - NEXT_PUBLIC_API_URL=https://tycoola.edu.kg:2053
     container_name: cv_maker_frontend
-    environment:
-      - NEXT_PUBLIC_API_URL=https://tycoola.edu.kg:2053 
     ports:
       - "80:3000" 
     depends_on:
@@ -73,7 +72,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M # 给构建预留稍多内存
 
 volumes:
   postgres_data:
