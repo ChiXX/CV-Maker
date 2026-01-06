@@ -37,11 +37,15 @@ app = FastAPI(
     description="API for generating customized CV and cover letters from job descriptions",
     version="1.0.0"
 )
-
+origins = [
+    "https://www.tycoola.edu.kg",
+    "https://tycoola.edu.kg",
+    "http://localhost:3000", # Good for local testing
+]
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=origins,  # Configure appropriately for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
