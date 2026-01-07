@@ -1,0 +1,68 @@
+\documentclass[11pt,a4paper,ragged2e,withhyper]{altacv}
+
+% Change the page layout if you need to
+\geometry{left=1.25cm,right=1.25cm,top=1.5cm,bottom=1.5cm,columnsep=1.2cm}
+
+\ifxetexorluatex
+  % If using xelatex or lualatex:
+  \setmainfont{Roboto Slab}
+  \setsansfont{Lato}
+  \renewcommand{\familydefault}{\sfdefault}
+\else
+  % If using pdflatex:
+  \usepackage[rm]{roboto}
+  \usepackage[defaultsans]{lato}
+  % \usepackage{sourcesanspro}
+  \renewcommand{\familydefault}{\sfdefault}
+\fi
+
+% Change the colours if you want to
+\definecolor{SlateGrey}{HTML}{2E2E2E}
+\definecolor{LightGrey}{HTML}{666666}
+\definecolor{DarkPastelGreen}{HTML}{0B3D0B}
+\definecolor{PastelGreen}{HTML}{006400} % SeaGreen
+\definecolor{GoldenEarth}{HTML}{A9DFBF} % Soft green for rule lines (optional)
+\definecolor{Gunmetal}{HTML}{2C3E50} 
+\colorlet{name}{black}
+\colorlet{tagline}{PastelGreen}
+\colorlet{heading}{DarkPastelGreen}
+\colorlet{headingrule}{GoldenEarth}
+\colorlet{subheading}{PastelGreen}
+\colorlet{accent}{PastelGreen}
+\colorlet{emphasis}{SlateGrey}
+\colorlet{body}{LightGrey}
+
+\renewcommand{\namefont}{\Huge\rmfamily\mdseries}
+\renewcommand{\personalinfofont}{\footnotesize}
+\renewcommand{\cvsectionfont}{\Large\rmfamily\mdseries}
+\renewcommand{\cvsubsectionfont}{\large\mdseries}
+
+\renewcommand{\cvItemMarker}{{\small\textbullet}}
+\renewcommand{\cvRatingMarker}{\faCircle}
+
+
+\begin{document}
+\name{Xu Chi}
+\tagline{Full Stack Developer}
+
+\personalinfo{%
+  \location{Lund, Sweden}
+  \email{xu.chi0228@gmail.com}
+  \phone{+46766354169}
+  % \NewInfoField{npm}{\faNpm}[https://www.npmjs.com/~]
+  % \npm{chixu}
+  \github{ChiXX}
+  \NewInfoField*{mastodon}{\faLinkedin}
+  \mastodon{Xu Chi}{https://www.linkedin.com/in/xu-chi-quite6/}
+}
+
+\makecvheader
+
+{\color{headingrule}\rule{\linewidth}{2pt}\par}\medskip
+
+Date: \today \par \vspace{-0.1cm} 
+\vspace{1cm}
+
+% Inject here
+
+\end{document}
