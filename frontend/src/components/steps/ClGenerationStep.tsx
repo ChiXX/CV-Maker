@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { WizardData } from '@/types';
-import { generateCoverLetter, regenerateCoverLetter, compilePdf as compilePdfServer } from '@/lib/api';
+import { generateCoverLetter, regenerateCoverLetter, compilePdf as compilePdfServer, getApplication } from '@/lib/api';
 
 interface ClGenerationStepProps {
   data: WizardData;
@@ -12,7 +12,7 @@ interface ClGenerationStepProps {
   onPrev: () => void;
 }
 
-type GenerationStep = 'planning' | 'executing' | 'rendering' | 'complete';
+type GenerationStep = 'planning' | 'executing' | 'editing' | 'rendering' | 'complete';
 
 interface ProcessStep {
   id: GenerationStep;
@@ -22,10 +22,30 @@ interface ProcessStep {
 
 export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGenerationStepProps) {
   const queryClient = useQueryClient();
-  const [currentStep, setCurrentStep] = useState<GenerationStep>('planning');
+  const [currentStep, setCurrentStep] = useState<GenerationStep>(
+    data.application?.cl_latex ? 'complete' : 'planning'
+  );
+  const [latexContent, setLatexContent] = useState<string>(data.application?.cl_latex || '');
+  const hasSyncedRef = useRef(false);
+
+  // 0. Fetch application data to ensure we have cl_latex if it exists
+  const { data: applicationData } = useQuery({
+    queryKey: ['application', data.application?.id],
+    queryFn: () => getApplication(data.application!.id),
+    enabled: !!data.application?.id,
+    staleTime: Infinity,
+  });
+
+  // Sync application data to wizard state
+  useEffect(() => {
+    if (applicationData && applicationData.cl_latex !== data.application?.cl_latex) {
+      onUpdate({
+        application: applicationData,
+      });
+    }
+  }, [applicationData]);
 
   // 1. Initial Cover Letter Generation Query
-  // useQuery handles de-duplication automatically, preventing double calls during mount
   const { 
     data: generationResult,
     isLoading: isGenerating,
@@ -36,7 +56,6 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
       setCurrentStep('executing');
       return await generateCoverLetter({ application_id: data.application!.id });
     },
-    // Only run if we have an application and no cover letter has been generated yet
     enabled: !!data.application?.id && !data.application?.cl_latex,
     staleTime: Infinity,
   });
@@ -46,29 +65,36 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
     mutationFn: async (applicationId: number) => {
       setCurrentStep('planning');
       onUpdate({ clGeneration: undefined });
-      await new Promise(resolve => setTimeout(resolve, 500)); // Brief UX pause
+      await new Promise(resolve => setTimeout(resolve, 500));
       setCurrentStep('executing');
       return await regenerateCoverLetter(applicationId);
     },
     onSuccess: (result) => {
       onUpdate({
         clGeneration: {
-          result: result.cl_latex,
-          planSteps: result.plan_steps || [],
-          currentStep: result.plan_steps?.length || 0,
+          result: result?.raw_content,
+          planSteps: result?.plan_steps || [],
+          currentStep: result?.plan_steps?.length || 0,
         } as any,
-        application: data.application ? {
-          ...data.application,
-          cl_latex: result.cl_latex,
-        } : undefined,
       });
-      setCurrentStep('rendering');
-      // Invalidate PDF query to force a fresh compile
-      queryClient.invalidateQueries({ queryKey: ['cl-pdf', data.application?.id] });
+      setLatexContent(result?.raw_content || '');
+      setCurrentStep('editing');
     },
   });
 
-  // 3. PDF Compilation Query
+  // 3. PDF Compilation Mutation (handles raw content rendering)
+  const compilePdfMutation = useMutation({
+    mutationFn: async (rawContent?: string) => {
+      if (!data.application?.id) return;
+      return await compilePdfServer(data.application.id, 'cl', rawContent);
+    },
+    onSuccess: (blob) => {
+      queryClient.setQueryData(['cl-pdf', data.application?.id, data.application?.cl_latex], blob);
+      setCurrentStep('complete');
+    },
+  });
+
+  // 4. PDF Compilation Query (for existing view)
   const {
     data: clPdfBlob,
     isLoading: isPdfLoading,
@@ -82,28 +108,35 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
 
   // Sync auto-generation result to parent state
   useEffect(() => {
-    if (generationResult && !data.application?.cl_latex) {
+    if (generationResult && generationResult.raw_content && !data.application?.cl_latex && !hasSyncedRef.current) {
+      hasSyncedRef.current = true;
       onUpdate({
         clGeneration: {
-          result: generationResult.cl_latex,
+          result: generationResult.raw_content,
           planSteps: generationResult.plan_steps || [],
           isLoading: false 
         } as any,
-        application: { 
-          ...data.application!, 
-          cl_latex: generationResult.cl_latex 
-        }
       });
-      setCurrentStep('rendering');
+      setLatexContent(generationResult.raw_content);
+      setCurrentStep('editing');
     }
-  }, [generationResult, data.application, onUpdate]);
+  }, [generationResult, data.application?.cl_latex]);
+
+  // If cl_latex exists, ensure we're in complete state
+  useEffect(() => {
+    if (data.application?.cl_latex && currentStep !== 'complete') {
+      setCurrentStep('complete');
+    }
+  }, [data.application?.cl_latex, currentStep]);
 
   // Transition to complete when PDF is ready
   useEffect(() => {
-    if (clPdfBlob && !isGenerating && !regenerateClMutation.isPending) {
+    if (clPdfBlob && currentStep === 'rendering') {
       setCurrentStep('complete');
     }
-  }, [clPdfBlob, isGenerating, regenerateClMutation.isPending]);
+  }, [clPdfBlob, currentStep]);
+
+  const activePdfBlob = clPdfBlob || compilePdfMutation.data;
 
   const handleRegenerate = () => {
     if (!data.application?.id || isGenerating || regenerateClMutation.isPending) return;
@@ -111,27 +144,33 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
   };
 
   const handleDownload = () => {
-    if (clPdfBlob) {
-      const url = URL.createObjectURL(clPdfBlob);
+    if (activePdfBlob) {
+      const url = URL.createObjectURL(activePdfBlob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `CoverLetter_${data.application?.company}_${data.application?.title}.pdf`;
+      link.download = `CoverLetter_${data.extractedData?.company || 'My'}_${data.extractedData?.title || 'CL'}.pdf`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 100);
     }
   };
 
-  const isLoading = isGenerating || regenerateClMutation.isPending || isPdfLoading;
-  const error = genError?.message || regenerateClMutation.error?.message || (pdfError as Error)?.message;
+  const handleRender = () => {
+    setCurrentStep('rendering');
+    compilePdfMutation.mutate(latexContent);
+  };
+
+  const isLoading = isGenerating || regenerateClMutation.isPending || compilePdfMutation.isPending || isPdfLoading;
+  const error = genError?.message || regenerateClMutation.error?.message || compilePdfMutation.error?.message || (pdfError as Error)?.message;
 
   const processSteps: ProcessStep[] = [
     { id: 'planning', label: 'Drafting Cover Letter', status: 'pending' },
     { id: 'executing', label: 'Tailoring Content', status: 'pending' },
-    { id: 'rendering', label: 'Generating PDF', status: 'pending' },
+    { id: 'editing', label: 'Review & Edit Content', status: 'pending' },
+    { id: 'rendering', label: 'Generating PDF Document', status: 'pending' },
   ];
 
   const getStepStatus = (stepId: GenerationStep) => {
-    const stepOrder: GenerationStep[] = ['planning', 'executing', 'rendering', 'complete'];
+    const stepOrder: GenerationStep[] = ['planning', 'executing', 'editing', 'rendering', 'complete'];
     const currentIndex = stepOrder.indexOf(currentStep);
     const stepIndex = stepOrder.indexOf(stepId);
 
@@ -141,6 +180,9 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
     if (error && stepIndex === currentIndex) return 'error';
     return 'pending';
   };
+
+  const isEditing = currentStep === 'editing';
+  const previewUrl = useMemo(() => activePdfBlob ? URL.createObjectURL(activePdfBlob) : null, [activePdfBlob]);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -154,45 +196,79 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
           </p>
         </div>
 
-        {/* Generation Process Steps */}
-        <div className="mb-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Generation Process</h3>
-          <div className="space-y-3">
-            {processSteps.slice(0, -1).map((step) => {
-              const status = getStepStatus(step.id);
-              return (
-                <div key={step.id} className="flex items-center space-x-3">
-                  <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
-                    status === 'completed' ? 'bg-green-500' :
-                    status === 'loading' ? 'bg-blue-500' :
-                    status === 'error' ? 'bg-red-500' : 'bg-gray-300'
-                  }`}>
-                    {status === 'loading' && (
-                      <div className="animate-spin rounded-full h-3 w-3 border border-white border-t-transparent"></div>
-                    )}
-                    {status === 'completed' && (
-                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                    {status === 'error' && (
-                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    )}
+        {/* Generation Process Steps - only show during generation, not for existing PDFs */}
+        {!data.application?.cl_latex && (
+          <div className="mb-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Generation Process</h3>
+            <div className="space-y-3">
+              {processSteps.slice(0, -1).map((step) => {
+                const status = getStepStatus(step.id);
+                return (
+                  <div key={step.id} className="flex items-center space-x-3">
+                    <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
+                      status === 'completed' ? 'bg-green-500' :
+                      status === 'loading' ? 'bg-blue-500' :
+                      status === 'error' ? 'bg-red-500' : 'bg-gray-300'
+                    }`}>
+                      {status === 'loading' && (
+                        <div className="animate-spin rounded-full h-3 w-3 border border-white border-t-transparent"></div>
+                      )}
+                      {status === 'completed' && (
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {status === 'error' && (
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </div>
+                    <span className={`text-sm ${
+                      status === 'completed' ? 'text-green-700' :
+                      status === 'loading' ? 'text-blue-700' :
+                      status === 'error' ? 'text-red-700' : 'text-gray-500'
+                    }`}>
+                      {step.label}
+                    </span>
                   </div>
-                  <span className={`text-sm ${
-                    status === 'completed' ? 'text-green-700' :
-                    status === 'loading' ? 'text-blue-700' :
-                    status === 'error' ? 'text-red-700' : 'text-gray-500'
-                  }`}>
-                    {step.label}
-                  </span>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Editor Display */}
+        {isEditing && (
+          <div className="mb-6">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg font-medium text-gray-900">Review & Edit Content</h3>
+              <button
+                onClick={handleRender}
+                disabled={isLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
+              >
+                {isLoading ? (
+                   <div className="animate-spin rounded-full h-4 w-4 border border-white border-t-transparent"></div>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                <span>Render PDF</span>
+              </button>
+            </div>
+            <div className="border rounded-md overflow-hidden">
+              <textarea
+                value={latexContent}
+                onChange={(e) => setLatexContent(e.target.value)}
+                className="w-full h-96 p-4 font-mono text-sm bg-gray-50 focus:outline-none focus:bg-white transition-colors resize-none"
+                spellCheck={false}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Error Display */}
         {error && (
@@ -216,12 +292,12 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
         )}
 
         {/* PDF Display */}
-        {clPdfBlob && currentStep === 'complete' && (
+        {activePdfBlob && currentStep === 'complete' && (
           <div className="mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-3">Generated Cover Letter</h3>
             <div className="bg-white p-2 rounded-md border">
-              <object data={URL.createObjectURL(clPdfBlob)} type="application/pdf" width="100%" height="600">
-                <p>Your browser does not support embedded PDFs. <a href={URL.createObjectURL(clPdfBlob)}>Download PDF</a>.</p>
+              <object data={previewUrl!} type="application/pdf" width="100%" height="600">
+                <p>Your browser does not support embedded PDFs. <a href={previewUrl!}>Download PDF</a>.</p>
               </object>
             </div>
             <div className="mt-4 flex justify-center space-x-4">

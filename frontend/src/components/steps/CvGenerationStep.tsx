@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { WizardData } from '@/types';
-import { generateCv, regenerateCv, compilePdf as compilePdfServer } from '@/lib/api';
+import { generateCv, regenerateCv, compilePdf as compilePdfServer, getApplication } from '@/lib/api';
 
 interface CvGenerationStepProps {
   data: WizardData;
@@ -12,7 +12,7 @@ interface CvGenerationStepProps {
   onPrev: () => void;
 }
 
-type GenerationStep = 'planning' | 'executing' | 'rendering' | 'complete';
+type GenerationStep = 'planning' | 'executing' | 'editing' | 'rendering' | 'complete';
 
 interface ProcessStep {
   id: GenerationStep;
@@ -22,10 +22,30 @@ interface ProcessStep {
 
 export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGenerationStepProps) {
   const queryClient = useQueryClient();
-  const [currentStep, setCurrentStep] = useState<GenerationStep>('planning');
+  const [currentStep, setCurrentStep] = useState<GenerationStep>(
+    data.application?.cv_latex ? 'complete' : 'planning'
+  );
+  const [latexContent, setLatexContent] = useState<string>(data.application?.cv_latex || '');
+  const hasSyncedRef = useRef(false);
+
+  // 0. Fetch application data to ensure we have cv_latex if it exists
+  const { data: applicationData } = useQuery({
+    queryKey: ['application', data.application?.id],
+    queryFn: () => getApplication(data.application!.id),
+    enabled: !!data.application?.id,
+    staleTime: Infinity,
+  });
+
+  // Sync application data to wizard state
+  useEffect(() => {
+    if (applicationData && applicationData.cv_latex !== data.application?.cv_latex) {
+      onUpdate({
+        application: applicationData,
+      });
+    }
+  }, [applicationData]);
 
   // 1. Initial CV Generation Query
-  // useQuery handles de-duplication automatically, preventing double calls
   const { 
     data: generationResult,
     isLoading: isGenerating,
@@ -33,11 +53,9 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
   } = useQuery({
     queryKey: ['generate-cv', data.application?.id],
     queryFn: async () => {
-      // Transition UI steps as the query progresses
       setCurrentStep('executing');
       return await generateCv({ application_id: data.application!.id });
     },
-    // Only run if we have an ID and haven't generated/updated the parent state yet
     enabled: !!data.application?.id && !data.application?.cv_latex,
     staleTime: Infinity,
   });
@@ -47,29 +65,36 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
     mutationFn: async (applicationId: number) => {
       setCurrentStep('planning');
       onUpdate({ cvGeneration: undefined });
-      await new Promise(resolve => setTimeout(resolve, 500)); // Brief pause for UX
+      await new Promise(resolve => setTimeout(resolve, 500));
       setCurrentStep('executing');
       return await regenerateCv(applicationId);
     },
     onSuccess: (result) => {
       onUpdate({
         cvGeneration: {
-          result: result.cv_latex,
-          planSteps: result.plan_steps || [],
-          currentStep: result.plan_steps?.length || 0,
+          result: result?.raw_content,
+          planSteps: result?.plan_steps || [],
+          currentStep: result?.plan_steps?.length || 0,
         } as any,
-        application: data.application ? {
-          ...data.application,
-          cv_latex: result.cv_latex,
-        } : undefined,
       });
-      setCurrentStep('rendering');
-      queryClient.invalidateQueries({ queryKey: ['cv-pdf', data.application?.id] });
+      setLatexContent(result?.raw_content || '');
+      setCurrentStep('editing');
+    },
+  });
+
+  // 3. PDF Compilation Mutation (handles raw content rendering)
+  const compilePdfMutation = useMutation({
+    mutationFn: async (rawContent?: string) => {
+      if (!data.application?.id) return;
+      return await compilePdfServer(data.application.id, 'cv', rawContent);
+    },
+    onSuccess: (blob) => {
+      queryClient.setQueryData(['cv-pdf', data.application?.id, data.application?.cv_latex], blob);
       setCurrentStep('complete');
     },
   });
 
-  // 3. PDF Compilation Query
+  // 4. PDF Compilation Query (for existing view)
   const {
     data: cvPdfBlob,
     isLoading: isPdfLoading,
@@ -83,28 +108,35 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
 
   // Sync auto-generation result to parent wizard state
   useEffect(() => {
-    if (generationResult && !data.application?.cv_latex) {
+    if (generationResult && generationResult.raw_content && !data.application?.cv_latex && !hasSyncedRef.current) {
+      hasSyncedRef.current = true;
       onUpdate({
         cvGeneration: {
-          result: generationResult.cv_latex,
+          result: generationResult.raw_content,
           planSteps: generationResult.plan_steps || [],
           isLoading: false 
         } as any,
-        application: { 
-          ...data.application!, 
-          cv_latex: generationResult.cv_latex 
-        }
       });
-      setCurrentStep('rendering');
+      setLatexContent(generationResult.raw_content);
+      setCurrentStep('editing');
     }
-  }, [generationResult, data.application, onUpdate]);
+  }, [generationResult, data.application?.cv_latex]);
 
-  // Update step to 'complete' once PDF is ready
+  // If cv_latex exists, ensure we're in complete state
   useEffect(() => {
-    if (cvPdfBlob && !isGenerating && !regenerateCvMutation.isPending) {
+    if (data.application?.cv_latex && currentStep !== 'complete') {
       setCurrentStep('complete');
     }
-  }, [cvPdfBlob, isGenerating, regenerateCvMutation.isPending]);
+  }, [data.application?.cv_latex, currentStep]);
+
+  // Update step to 'complete' once PDF is ready (for existing view)
+  useEffect(() => {
+    if (cvPdfBlob && currentStep === 'rendering') {
+      setCurrentStep('complete');
+    }
+  }, [cvPdfBlob, currentStep]);
+
+  const activePdfBlob = cvPdfBlob || compilePdfMutation.data;
 
   const handleRegenerate = () => {
     if (!data.application?.id || isGenerating || regenerateCvMutation.isPending) return;
@@ -112,28 +144,34 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
   };
 
   const handleDownload = () => {
-    if (cvPdfBlob) {
-      const url = URL.createObjectURL(cvPdfBlob);
+    if (activePdfBlob) {
+      const url = URL.createObjectURL(activePdfBlob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `CV_${data.application?.company}_${data.application?.title}.pdf`;
+      link.download = `CV_${data.extractedData?.company || 'My'}_${data.extractedData?.title || 'CV'}.pdf`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 100);
     }
   };
 
+  const handleRender = () => {
+    setCurrentStep('rendering');
+    compilePdfMutation.mutate(latexContent);
+  };
+
   // Derived states
-  const isLoading = isGenerating || regenerateCvMutation.isPending || isPdfLoading;
-  const error = genError?.message || regenerateCvMutation.error?.message || (pdfError as Error)?.message;
+  const isLoading = isGenerating || regenerateCvMutation.isPending || compilePdfMutation.isPending || isPdfLoading;
+  const error = genError?.message || regenerateCvMutation.error?.message || compilePdfMutation.error?.message || (pdfError as Error)?.message;
 
   const processSteps: ProcessStep[] = [
     { id: 'planning', label: 'Analyzing Job Description', status: 'pending' },
-    { id: 'executing', label: 'Generating LaTeX Content', status: 'pending' },
+    { id: 'executing', label: 'Tailoring Content', status: 'pending' },
+    { id: 'editing', label: 'Review & Edit Content', status: 'pending' },
     { id: 'rendering', label: 'Compiling PDF Document', status: 'pending' },
   ];
 
   const getStepStatus = (stepId: GenerationStep) => {
-    const stepOrder: GenerationStep[] = ['planning', 'executing', 'rendering', 'complete'];
+    const stepOrder: GenerationStep[] = ['planning', 'executing', 'editing', 'rendering', 'complete'];
     const currentIndex = stepOrder.indexOf(currentStep);
     const stepIndex = stepOrder.indexOf(stepId);
 
@@ -143,6 +181,9 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
     if (error && stepIndex === currentIndex) return 'error';
     return 'pending';
   };
+
+  const isEditing = currentStep === 'editing';
+  const previewUrl = useMemo(() => activePdfBlob ? URL.createObjectURL(activePdfBlob) : null, [activePdfBlob]);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -156,45 +197,79 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
           </p>
         </div>
 
-        {/* Generation Process Steps */}
-        <div className="mb-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Generation Process</h3>
-          <div className="space-y-3">
-            {processSteps.slice(0, -1).map((step) => {
-              const status = getStepStatus(step.id);
-              return (
-                <div key={step.id} className="flex items-center space-x-3">
-                  <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
-                    status === 'completed' ? 'bg-green-500' :
-                    status === 'loading' ? 'bg-blue-500' :
-                    status === 'error' ? 'bg-red-500' : 'bg-gray-300'
-                  }`}>
-                    {status === 'loading' && (
-                      <div className="animate-spin rounded-full h-3 w-3 border border-white border-t-transparent"></div>
-                    )}
-                    {status === 'completed' && (
-                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                    {status === 'error' && (
-                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    )}
+        {/* Generation Process Steps - only show during generation, not for existing PDFs */}
+        {!data.application?.cv_latex && (
+          <div className="mb-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Generation Process</h3>
+            <div className="space-y-3">
+              {processSteps.slice(0, -1).map((step) => {
+                const status = getStepStatus(step.id);
+                return (
+                  <div key={step.id} className="flex items-center space-x-3">
+                    <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
+                      status === 'completed' ? 'bg-green-500' :
+                      status === 'loading' ? 'bg-blue-500' :
+                      status === 'error' ? 'bg-red-500' : 'bg-gray-300'
+                    }`}>
+                      {status === 'loading' && (
+                        <div className="animate-spin rounded-full h-3 w-3 border border-white border-t-transparent"></div>
+                      )}
+                      {status === 'completed' && (
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                      {status === 'error' && (
+                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </div>
+                    <span className={`text-sm ${
+                      status === 'completed' ? 'text-green-700' :
+                      status === 'loading' ? 'text-blue-700' :
+                      status === 'error' ? 'text-red-700' : 'text-gray-500'
+                    }`}>
+                      {step.label}
+                    </span>
                   </div>
-                  <span className={`text-sm ${
-                    status === 'completed' ? 'text-green-700' :
-                    status === 'loading' ? 'text-blue-700' :
-                    status === 'error' ? 'text-red-700' : 'text-gray-500'
-                  }`}>
-                    {step.label}
-                  </span>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Editor Display */}
+        {isEditing && (
+          <div className="mb-6">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg font-medium text-gray-900">Review & Edit Content</h3>
+              <button
+                onClick={handleRender}
+                disabled={isLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
+              >
+                {isLoading ? (
+                   <div className="animate-spin rounded-full h-4 w-4 border border-white border-t-transparent"></div>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                <span>Render PDF</span>
+              </button>
+            </div>
+            <div className="border rounded-md overflow-hidden">
+              <textarea
+                value={latexContent}
+                onChange={(e) => setLatexContent(e.target.value)}
+                className="w-full h-96 p-4 font-mono text-sm bg-gray-50 focus:outline-none focus:bg-white transition-colors resize-none"
+                spellCheck={false}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Error Display */}
         {error && (
@@ -203,7 +278,7 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
               <div className="flex">
                 <div className="flex-shrink-0">
                   <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
                 </div>
                 <div className="ml-3">
@@ -218,12 +293,12 @@ export function CvGenerationStep({ data, onUpdate, onNext, onPrev }: CvGeneratio
         )}
 
         {/* PDF Display */}
-        {cvPdfBlob && currentStep === 'complete' && (
+        {activePdfBlob && currentStep === 'complete' && (
           <div className="mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-3">Generated CV</h3>
             <div className="bg-white p-2 rounded-md border">
-              <object data={URL.createObjectURL(cvPdfBlob)} type="application/pdf" width="100%" height="600">
-                <p>Your browser does not support embedded PDFs. <a href={URL.createObjectURL(cvPdfBlob)}>Download PDF</a>.</p>
+              <object data={previewUrl!} type="application/pdf" width="100%" height="600">
+                <p>Your browser does not support embedded PDFs. <a href={previewUrl!}>Download PDF</a>.</p>
               </object>
             </div>
             <div className="mt-4 flex justify-center space-x-4">

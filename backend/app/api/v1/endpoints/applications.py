@@ -17,10 +17,10 @@ from app.db.models import Application
 from app.schemas.application import (
     JobExtractionRequest, JobExtractionResponse,
     CvGenerationResponse, ClGenerationResponse,
-    JobApplicationResponse
+    JobApplicationResponse, CompilePdfRequest
 )
-from app.services.cv_generator import compile_cv_tex
-from app.services.cl_generator import compile_cl_tex
+from app.services.cv_generator import compile_cv_tex, wrap_cv_in_latex
+from app.services.cl_generator import compile_cl_tex, wrap_cl_in_latex
 from app.services.jd_generator import extract_jd_from_url_with_llm
 
 router = APIRouter()
@@ -116,15 +116,15 @@ async def generate_cv(
 
         # Check if CV already exists
         if application.cv_latex:
-            return CvGenerationResponse(cv_latex=application.cv_latex, plan_steps=None)
+            # How to get raw content from existing latex? 
+            # For simplicity, if it exists, the FE will just skip editing
+            # But the response schema requires raw_content. 
+            return CvGenerationResponse(raw_content="", plan_steps=None)
 
-        # Generate CV LaTeX directly
-        cv_latex, new_summary, plan_steps = compile_cv_tex(client, application.jd_text)
-        # Update application
-        application.cv_latex = cv_latex
-        db.commit()
-
-        return CvGenerationResponse(cv_latex=cv_latex, plan_steps=plan_steps)
+        # Generate raw CV summary
+        raw_summary, plan_steps = compile_cv_tex(client, application.jd_text)
+        
+        return CvGenerationResponse(raw_content=raw_summary, plan_steps=plan_steps)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start CV generation: {str(e)}")
 
@@ -134,21 +134,17 @@ async def regenerate_cv(
     db: Session = Depends(get_db_dependency)
 ):
     """
-    Regenerate CV LaTeX for an existing application
+    Regenerate CV raw summary
     """
     try:
         application = db.query(Application).filter(Application.id == application_id).first()
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
 
-        # Generate CV LaTeX directly
-        cv_latex, new_summary, plan_steps = compile_cv_tex(client, application.jd_text)
+        # Generate raw CV summary
+        raw_summary, plan_steps = compile_cv_tex(client, application.jd_text)
 
-        # Update application
-        application.cv_latex = cv_latex
-        db.commit()
-
-        return CvGenerationResponse(cv_latex=cv_latex, plan_steps=plan_steps)
+        return CvGenerationResponse(raw_content=raw_summary, plan_steps=plan_steps)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start CV regeneration: {str(e)}")
 
@@ -168,16 +164,12 @@ async def generate_cover_letter(
 
         # Check if CL already exists
         if application.cl_latex:
-            return ClGenerationResponse(cl_latex=application.cl_latex, plan_steps=None)
+            return ClGenerationResponse(raw_content="", plan_steps=None)
 
-        # Generate CL LaTeX directly
-        cl_latex, letter_body, plan_steps = compile_cl_tex(client, application.jd_text, application.company, application.title, application.cv_latex)
+        # Generate CL raw content
+        raw_body, plan_steps = compile_cl_tex(client, application.jd_text, application.company, application.title, application.cv_latex)
 
-        # Update application
-        application.cl_latex = cl_latex
-        db.commit()
-
-        return ClGenerationResponse(cl_latex=cl_latex, plan_steps=plan_steps)
+        return ClGenerationResponse(raw_content=raw_body, plan_steps=plan_steps)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate cover letter: {str(e)}")
@@ -188,7 +180,7 @@ async def regenerate_cover_letter(
     db: Session = Depends(get_db_dependency)
 ):
     """
-    Regenerate cover letter LaTeX for an existing application
+    Regenerate cover letter raw content
     """
     try:
         # Get application
@@ -196,28 +188,23 @@ async def regenerate_cover_letter(
         if not application:
             raise HTTPException(status_code=404, detail="Application not found")
 
-        # Regenerate CL LaTeX and obtain plan steps
-        cl_latex, _, plan_steps = compile_cl_tex(client, application.jd_text, application.company, application.title, application.cv_latex)
+        raw_body, plan_steps = compile_cl_tex(client, application.jd_text, application.company, application.title, application.cv_latex)
 
-        # Update application
-        application.cl_latex = cl_latex
-        db.commit()
-
-        return ClGenerationResponse(cl_latex=cl_latex, plan_steps=plan_steps)
+        return ClGenerationResponse(raw_content=raw_body, plan_steps=plan_steps)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to regenerate cover letter: {str(e)}")
-
 
 @router.post("/{application_id}/compile_pdf/{target}")
 async def compile_pdf(
     application_id: int,
     target: str,
+    request: Optional[CompilePdfRequest] = None,
     db: Session = Depends(get_db_dependency)
 ):
     """
-    Compile PDF from LaTeX content using pdflatex
-    target: 'cv' or 'cl' (CV or Cover Letter)
+    Compile PDF from content.
+    If request.raw_content is provided, wraps it in LaTeX and saves to DB first.
     """
     application = db.query(Application).filter(Application.id == application_id).first()
     if not application:
@@ -226,10 +213,23 @@ async def compile_pdf(
     if target not in ['cv', 'cl']:
         raise HTTPException(status_code=400, detail="Target must be 'cv' or 'cl'")
 
-    # Get LaTeX content
-    latex_content = application.cv_latex if target == 'cv' else application.cl_latex
+    # If raw content is provided, wrap and save it
+    if request and request.raw_content:
+        if target == 'cv':
+            latex_content = wrap_cv_in_latex(request.raw_content)
+            application.cv_latex = latex_content
+        else:
+            latex_content = wrap_cl_in_latex(request.raw_content)
+            application.cl_latex = latex_content
+        
+        db.commit()
+        db.refresh(application)
+    else:
+        # Get existing LaTeX content
+        latex_content = application.cv_latex if target == 'cv' else application.cl_latex
+    
     if not latex_content:
-        raise HTTPException(status_code=400, detail=f"No {target.upper()} content found")
+        raise HTTPException(status_code=400, detail=f"No {target.upper()} content found and no raw_content provided")
 
     # Sanitize filename for Content-Disposition header
     safe_company = _re.sub(r'[\\/:"*?<>|]+', '_', application.company)

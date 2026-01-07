@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query'; // Added
 import { WizardData, WizardStep } from '@/types';
 import { StepIndicator } from './StepIndicator';
@@ -23,9 +23,9 @@ export function Wizard() {
     url: '',
   });
 
-  const updateWizardData = (updates: Partial<WizardData>) => {
+  const updateWizardData = useCallback((updates: Partial<WizardData>) => {
     setWizardData(prev => ({ ...prev, ...updates }));
-  };
+  }, []);
 
   // Improved reset function
   const handleRestart = () => {

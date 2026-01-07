@@ -84,19 +84,22 @@ export async function regenerateCoverLetter(applicationId: number): Promise<ClGe
   return response.json();
 }
 
-export async function compilePdf(applicationId: number, target: 'cv' | 'cl'): Promise<Blob> {
+export async function compilePdf(applicationId: number, target: 'cv' | 'cl', rawContent?: string): Promise<Blob> {
   const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/compile_pdf/${target}`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ raw_content: rawContent }),
   });
-
+  
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`Failed to compile PDF: ${error}`);
   }
-
+  
   return response.blob();
 }
-
 
 export async function getApplication(applicationId: number): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/applications/${applicationId}`);
@@ -106,4 +109,3 @@ export async function getApplication(applicationId: number): Promise<any> {
   }
   return response.json();
 }
-

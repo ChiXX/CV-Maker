@@ -36,15 +36,18 @@ class CvGenerationRequest(BaseModel):
     application_id: int
 
 class CvGenerationResponse(BaseModel):
-    cv_latex: str
+    raw_content: str
     plan_steps: Optional[List[str]] = None
 
 class ClGenerationRequest(BaseModel):
     application_id: int
 
 class ClGenerationResponse(BaseModel):
-    cl_latex: str
+    raw_content: str
     plan_steps: Optional[List[str]] = None
 
 class PdfCompileResponse(BaseModel):
     detail: str
+
+class CompilePdfRequest(BaseModel):
+    raw_content: Optional[str] = None

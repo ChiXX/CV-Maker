@@ -30,7 +30,7 @@ export interface CvGenerationRequest {
 }
 
 export interface CvGenerationResponse {
-  cv_latex: string;
+  raw_content: string;
   plan_steps?: string[];
 }
 
@@ -39,7 +39,7 @@ export interface ClGenerationRequest {
 }
 
 export interface ClGenerationResponse {
-  cl_latex: string;
+  raw_content: string;
   plan_steps?: string[];
 }
 
