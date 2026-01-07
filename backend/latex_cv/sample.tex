@@ -1,0 +1,213 @@
+% Date posted: 16/06/2025
+% Version 2
+
+
+\documentclass[10pt,a4paper,ragged2e,withhyper]{altacv}
+
+% Change the page layout if you need to
+\geometry{left=1.25cm,right=1.25cm,top=1.5cm,bottom=1.5cm,columnsep=1.2cm}
+
+% The paracol package lets you typeset columns of text in parallel
+\usepackage{paracol}
+
+% Change the font if you want to, depending on whether
+% you're using pdflatex or xelatex/lualatex
+% WHEN COMPILING WITH XELATEX PLEASE USE
+% xelatex -shell-escape -output-driver="xdvipdfmx -z 0" sample.tex
+\ifxetexorluatex
+  % If using xelatex or lualatex:
+  \setmainfont{Roboto}
+  \setsansfont{Lato}
+  \renewcommand{\familydefault}{\sfdefault}
+\else
+  % If using pdflatex:
+  \usepackage[rm]{roboto}
+  \usepackage[defaultsans]{lato}
+  % \usepackage{sourcesanspro}
+  \renewcommand{\familydefault}{\sfdefault}
+\fi
+
+% Change the colours if you want to
+\definecolor{SlateGrey}{HTML}{2E2E2E}
+\definecolor{LightGrey}{HTML}{666666}
+\definecolor{DarkPastelGreen}{HTML}{0B3D0B}
+\definecolor{PastelGreen}{HTML}{006400} % SeaGreen
+\definecolor{GoldenEarth}{HTML}{A9DFBF} % Soft green for rule lines (optional)
+\definecolor{Gunmetal}{HTML}{2C3E50} 
+\colorlet{name}{black}
+\colorlet{tagline}{PastelGreen}
+\colorlet{heading}{DarkPastelGreen}
+\colorlet{headingrule}{GoldenEarth}
+\colorlet{subheading}{PastelGreen}
+\colorlet{accent}{PastelGreen}
+\colorlet{emphasis}{SlateGrey}
+\colorlet{body}{LightGrey}
+
+% Change some fonts, if necessary
+\renewcommand{\namefont}{\Huge\rmfamily\mdseries}
+\renewcommand{\personalinfofont}{\footnotesize}
+\renewcommand{\cvsectionfont}{\Large\rmfamily\mdseries}
+\renewcommand{\cvsubsectionfont}{\large\mdseries}
+\newcommand{\strong}[1]{\textcolor{Gunmetal}{\textbf{#1}}}
+
+
+% Change the bullets for itemize and rating marker
+% for \cvskill if you want to
+\renewcommand{\cvItemMarker}{{\small\textbullet}}
+\renewcommand{\cvRatingMarker}{\faCircle}
+
+
+%% sample.bib contains your publications
+% \addbibresource{sample.bib}
+
+\begin{document}
+\name{Xu Chi}
+\tagline{Full Stack Developer}
+\cvparagraph{Full Stack Developer with 3+ years of coding experience; skilled in Flask, Node.js, PostgreSQL, and AWS
+CI/CD, focusing on user-friendly web services and modular systems for biomedical applications}
+
+%% You can add multiple photos on the left or right
+\photoR{2.8cm}{avatar}
+% \photoL{2.5cm}{Yacht_High,Suitcase_High}
+
+\personalinfo{%
+  % Not all of these are required!
+  \location{Lund, Sweden}
+  \email{xu.chi0228@gmail.com}
+  \phone{+46766354169}
+  % \mailaddress{Åddrésş, Street, 00000 Cóuntry}
+  % \homepage{www.homepage.com}
+  % \twitter{@twitterhandle}
+  % \NewInfoField{npm}{\faNpm}[https://www.npmjs.com/~]
+  % \npm{chixu}
+  \github{ChiXX}
+  \NewInfoField*{mastodon}{\faLinkedin}
+  \mastodon{Xu Chi}{https://www.linkedin.com/in/xu-chi-quite6/}
+}
+
+\makecvheader
+
+%% Set the left/right column width ratio to 6:4.
+\columnratio{0.6}
+
+% Start a 2-column paracol. Both the left and right columns will automatically
+% break across pages if things get too long.
+\begin{paracol}{2}
+\cvsection{Experience}
+
+\cvevent{Full Stack Developer}{SAGA Diagnostics AB}{11/2023 -- Present}{Lund, Sweden}
+\begin{itemize}
+    \item Transformed manual workflows such as plate ordering and dPCR analysis into a modular \strong{Flask blueprint}-based system, which greatly improved data traceability and lab throughput.
+    \item Built multiple search pages using \strong{SQLAlchemy} and \strong{PostgreSQL}; optimized queries and added \strong{pagination} to ensure fast performance with growing datasets.
+    \item Created \strong{RESTful APIs} to ingest bioinformatics results, validating schema and linking to sample records
+    \item Contributed to \strong{Playwright-based E2E tests}, helping validate workflows and integrate coverage checks in CI
+    \item Maintained \strong{Docker} setups and deployed services using \strong{GitLab CI/CD} on \strong{AWS EC2}
+\end{itemize}
+
+
+
+\divider
+
+\cvevent{Full Stack Developer}{Bionamic AB}{03/2022 -- 10/2023}{Lund, Sweden}
+\begin{itemize}
+    \item Built antibody discovery tools using \strong{Node.js} with \strong{object-oriented design}, tailored to diverse user needs in research and business
+    \item Built \strong{SPAs} using \strong{Web Components} with \strong{Lit.js} enabling fast-loading and reusable UI component
+    \item Created visualizations (e.g. dendrograms, box plots) with \strong{D3.js} to help researchers explore antibody data
+    \item Built reusable helper classes to interact with \strong{MongoDB}, improving performance through in-memory caching and flexible schema design
+    \item Contributed to test coverage and deployment pipelines in a containerized \strong{AWS} setup
+\end{itemize}
+
+
+
+\cvsection{Skills}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{>{\bfseries}l p{0.4\textwidth}}
+\strong{Languages} & Python, JavaScript, TypeScript, SQL, Bash, C \\
+\strong{Frontend } & React, HTMX, Bootstrap 5, jQuery, HTML/CSS \\
+\strong{Backend  } & Flask, Node.js, Express \\
+\strong{Database } & PostgreSQL, MongoDB \\
+\strong{Testing  } & Pytest, Cypress, Jest, node:test \\
+\strong{DevOps   } & Docker, GitLab CI/CD, Make, AWS EC2/S3 \\
+\strong{Tools    } & Git, PNPM, VSCode, Postman
+\end{tabular}
+
+\cvsection{Languages}
+\cvskill{Chinese}{5}
+\medskip
+\cvskill{English}{4}
+\medskip
+\cvskill{Swedish}{3}
+
+\switchcolumn
+
+\cvsection{Education}
+
+\cvevent{MSc in Bioinformatics}{Lund University}{08/2019 -- 02/2022}{Lund, Sweden}
+\begin{itemize}
+    \item Focused on \strong{machine learning} for biomedical data analysis.
+    \item \strong{Thesis}: \textit{Feature selection pipelines for RNA-seq-based patient outcome prediction} \href{https://github.com/ChiXX/isoform}{\faLink}
+    \item \strong{Project}: \textit{Detecting batch effects in proteomics using ML} \href{https://github.com/ChiXX/BatchEffect}{\faLink}
+\end{itemize}
+
+\divider
+
+\cvevent{BSc in Biomedical Engineering}{Hangzhou Dianzi University}{08/2015 -- 06/2019}{Hangzhou, China}
+\begin{itemize}
+    \item Studied multiple programming languages (\strong{C, C++, Java}) and algorithms basics
+    \item Gained hands-on experience in embedded systems and hardware development
+\end{itemize}
+
+\cvsection{Selected Projects}
+
+\cvevent{\href{https://github.com/ChiXX/AuthKit}{\faGithub\ Authentication Utility Library}\href{https://github.com/ChiXX/AuthKit}{\faLink}}{}{}{}
+\cvtag{React} \cvtag{Node.js} \cvtag{MongoDB} \cvtag{JWT} \cvtag{Email Verification}
+
+\vspace{1em}
+
+\cvevent{\href{https://github.com/ChiXX/TODO-App}{\faGithub\ TODO App with MERN stack}\href{https://github.com/ChiXX/TODO-App}{\faLink}}{}{}{}
+\cvtag{Next.js} \cvtag{MongoDB} \cvtag{Tailwind CSS} \cvtag{Jest} \cvtag{Docker} \cvtag{Pagination} \\
+\cvtag{Test Automation}
+
+
+% \cvsection{Attributes} %
+
+% \cvtag{Hard-working}
+% \cvtag{Eye for detail}
+% \cvtag{Self-driven}
+
+% \cvsection{Interests}
+
+% \begin{itemize}[font=\color{accent},style=multiline,leftmargin=1.35em,align=left]
+% \item[\small\normalfont\faBiking] Bicking
+% \item[\small\normalfont\faHiking] Hiking
+% \item[\small\normalfont\faRunning] Running
+
+% \end{itemize}
+
+
+
+% \cvsection{Referees}
+
+% % \cvref{name}{email}{mailing address}
+% \cvref{}{Robert Rigo - SAGA}{robert.rigo@sagadiagnostics.com}
+% \divider
+% \cvref{}{Morten Krogh - Bionamic}{morten.krogh@bionamic.io}
+\cvsection{References}
+\referee
+  {Robert Rigo}
+  {robert.rigo@sagadiagnostics.com}
+  {+46701234567}
+  {Software Team Manager, SAGA Diagnostics AB}
+  {Xu is a reliable and versatile engineer who made impactful contributions to our LIMS platform.}
+
+\vspace{1em}
+
+\referee
+  {Morten Krogh}
+  {morten.krogh@bionamic.io}
+  {+46709876543}
+  {CTO, Bionamic AB}
+  {Xu quickly adapted to the complexity of scientific data workflows and delivered elegant full-stack solutions.}
+
+\end{paracol}
+\end{document}
