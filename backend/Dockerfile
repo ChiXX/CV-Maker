@@ -44,7 +44,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /app/.venv /app/.venv
 
-COPY app.py cl_generator.py cv_generator.py jd_generator.py database.py models.py shared_resume.py prompts.py shared_prompts.py planner_and_solver.py ./
+COPY app/ ./app/
+COPY scripts/ ./scripts/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 COPY latex_cl/ ./latex_cl/
 COPY latex_cv/ ./latex_cv/
 
@@ -53,4 +56,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/docs || exit 1
 
-CMD ["/app/.venv/bin/python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "asyncio"]
+CMD ["/app/.venv/bin/python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "asyncio"]

@@ -1,7 +1,7 @@
 import re
 import requests
 from bs4 import BeautifulSoup
-from prompts import jd_extraction_prompt_template
+from app.core.prompts import jd_extraction_prompt_template
 
 
 def extract_jd_from_url_with_llm(client, url):

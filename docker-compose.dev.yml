@@ -20,15 +20,16 @@ services:
       retries: 5
 
   api:
-    build: .
+    build: ./backend
     container_name: cv_maker_api_dev
+    env_file:
+      - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://cv_user:cv_password@postgres:5432/cv_maker
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      PYTHONUNBUFFERED: 1
-      PYTHONPATH: /app
+      - DATABASE_URL=postgresql://cv_user:cv_password@postgres:5432/cv_maker
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
     volumes:
-      - .:/app
+      - ./backend:/app
       - /app/.venv  
     ports:
       - "8000:8000"
@@ -36,7 +37,7 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    command: /app/.venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+    command: /app/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build:

@@ -1,9 +1,9 @@
 import os
 import re
 from typing import List, Dict, Any
-from planner_and_solver import Planner, Solver
-from shared_prompts import CL_PLANNER_PROMPT, CL_SOLVER_PROMPT
-from shared_resume import resume_data
+from app.services.planner_and_solver import Planner, Solver
+from app.core.prompts import CL_PLANNER_PROMPT, CL_SOLVER_PROMPT
+from app.services.shared_resume import resume_data
 
 def compile_cl_tex(client, jd_text, company, title, cv_latex, interactive=False):
     main_tex_file = "./latex_cl/sample.tex"

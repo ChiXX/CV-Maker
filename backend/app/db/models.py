@@ -15,7 +15,7 @@ class Application(Base):
     __tablename__ = "applications"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    jb_url = Column(String, nullable=False, unique=True, index=True)
+    job_url = Column(String, nullable=False, unique=True, index=True)
     jd_text = Column(Text, nullable=False)
     company = Column(String, nullable=False)
     title = Column(String, nullable=False)

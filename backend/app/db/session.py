@@ -5,7 +5,7 @@ from typing import Generator, List, Annotated
 from sqlalchemy import inspect, text
 from sqlalchemy.pool import StaticPool
 from fastapi import Depends
-from models import Base
+from app.db.models import Base
 
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://cv_user:cv_password@localhost:5432/cv_maker")
@@ -41,30 +41,11 @@ def get_db_dependency(db: Session = Depends(get_db)) -> Session:
     """FastAPI dependency for database session"""
     return db
 
-def create_tables():
-    """Create all tables in the database"""
-    Base.metadata.create_all(bind=engine)
-
-def ensure_columns_exist():
-    """Ensure optional columns exist on the applications table (adds them if missing)."""
-    inspector = inspect(engine)
-    if "applications" not in inspector.get_table_names():
-        return
-
-    existing_columns: List[str] = [c["name"] for c in inspector.get_columns("applications")]
-
-    with engine.begin() as conn:
-        if "cv_latex" not in existing_columns:
-            conn.execute(text('ALTER TABLE applications ADD COLUMN cv_latex TEXT'))
-        if "cl_latex" not in existing_columns:
-            conn.execute(text('ALTER TABLE applications ADD COLUMN cl_latex TEXT'))
-
 def init_db():
-    """Initialize database and create tables"""
-    create_tables()
-    # Ensure schema is up-to-date for fields added after initial table creation.
-    try:
-        ensure_columns_exist()
-    except Exception:
-        # If ALTER fails in some environments, ignore so app can still start.
-        pass
+    """
+    Initialize database.
+    Note: Schema management is now handled by Alembic migrations.
+    """
+    # For backward compatibility, this function is kept but has no effect on schema.
+    # The actual table creation should be done via: alembic upgrade head
+    pass

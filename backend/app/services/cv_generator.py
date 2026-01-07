@@ -1,7 +1,7 @@
 import re
-from planner_and_solver import Planner, Solver
-from shared_prompts import CV_PLANNER_PROMPT, CV_SOLVER_PROMPT
-from shared_resume import resume_data
+from app.services.planner_and_solver import Planner, Solver
+from app.core.prompts import CV_PLANNER_PROMPT, CV_SOLVER_PROMPT
+from app.services.shared_resume import resume_data
 
 
 def compile_cv_tex(client, jd_text):

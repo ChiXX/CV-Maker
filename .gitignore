@@ -1,10 +1,10 @@
 latex*/*
 .env
 Applications
-prompts.py
 __pycache__/
 *.py[cod]
 *.pyo
+backend/.venv/
 
 *node_modules*
 

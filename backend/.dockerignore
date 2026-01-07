@@ -5,12 +5,6 @@ __pycache__/
 .venv/
 .env
 
-# 忽略前端依赖和构建产物
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/build/
-
 # 忽略系统和 Git 文件
 .git/
 .gitignore
