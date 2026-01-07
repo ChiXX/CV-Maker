@@ -49,11 +49,6 @@ async def extract_job_details(
         # Extract job description from URL
         jd_text, company, title = extract_jd_from_url_with_llm(client, request.job_url)
 
-        # Create output directory
-        today = datetime.now().strftime("%Y-%m-%d")
-        out_dir = os.path.join("Applications", f"{today}-{company}")
-        os.makedirs(out_dir, exist_ok=True)
-
         # Create application record with only JD info
         application = Application(
             job_url=request.job_url,
@@ -88,18 +83,6 @@ async def regenerate_job_details(
 
         # Re-extract job description from URL
         jd_text, company, title = extract_jd_from_url_with_llm(client, application.job_url)
-
-        # Update output directory and file
-        today = datetime.now().strftime("%Y-%m-%d")
-        out_dir = os.path.join("Applications", f"{today}-{company}")
-        os.makedirs(out_dir, exist_ok=True)
-
-        # Save updated JD text (sanitize title for filesystem safety)
-        safe_title = _re.sub(r'[\\/:"*?<>|]+', '_', title)
-        jd_txt_path = os.path.join(out_dir, f"{safe_title}.txt")
-        os.makedirs(os.path.dirname(jd_txt_path), exist_ok=True)
-        with open(jd_txt_path, "w", encoding="utf-8") as f:
-            f.write(jd_text)
 
         # Update application record
         application.jd_text = jd_text
@@ -278,9 +261,9 @@ async def compile_pdf(
             with open(tex_path, "w", encoding="utf-8") as f:
                 f.write(latex_content)
 
-            # Run pdflatex
+            # Run xelatex (supports system fonts and is more modern)
             proc = subprocess.run([
-                "pdflatex",
+                "xelatex",
                 "-interaction=nonstopmode",
                 f"-output-directory={tmpdir}",
                 "main.tex",
