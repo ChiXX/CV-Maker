@@ -20,7 +20,7 @@ def wrap_cl_in_latex(letter_body: str) -> str:
         line.strip() for line in letter_body.split("\n") if line.strip()
     ]
     formatted_letter = "\n\n\\vspace{0.5cm}\n\n".join(formatted_paragraphs)
-    new_tex = tex_template.replace("% Inject here", formatted_letter)
+    new_tex = tex_template.replace("\\coverletterbody", formatted_letter)
     return new_tex
 
 def compile_cl_tex(client, jd_text, company, title, cv_latex, interactive=False):

@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-fonts-extra \
     texlive-xetex \
     fonts-roboto \
+    fonts-roboto-slab \
     fonts-lato \
     fontconfig \
     && apt-get clean \
