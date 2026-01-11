@@ -20,6 +20,22 @@ dev-down:
 dev-ui-down:
     docker-compose -f docker-compose.dev.yml down frontend
 
+# Database Operations
+migrate:
+    docker-compose -f docker-compose.dev.yml exec api /app/.venv/bin/python /app/scripts/init_db.py
+
+migrate-lightweight:
+    docker-compose -f docker-compose.lightweight.yml exec api /app/.venv/bin/python /app/scripts/init_db.py
+
+migrate-status:
+    docker-compose -f docker-compose.dev.yml exec api /app/.venv/bin/alembic current
+
+migrate-history:
+    docker-compose -f docker-compose.dev.yml exec api /app/.venv/bin/alembic history --verbose
+
+migrate-create MESSAGE:
+    docker-compose -f docker-compose.dev.yml exec api /app/.venv/bin/alembic revision -m "{{MESSAGE}}"
+
 # Production Deployment
 deploy-build:
     docker-compose -f docker-compose.lightweight.yml build --no-cache
