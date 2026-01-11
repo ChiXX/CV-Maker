@@ -47,6 +47,8 @@ services:
     container_name: cv_maker_frontend_dev
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
     volumes:
       - ./frontend:/app
       - /app/node_modules

@@ -1,21 +1,25 @@
-\documentclass[11pt,a4paper,ragged2e,withhyper]{altacv}
+% Date posted: 16/06/2025
+% Version 2
 
-% Change the page layout if you need to
+
+\documentclass[10pt,a4paper,ragged2e,withhyper]{altacv}
+
 \geometry{left=1.25cm,right=1.25cm,top=1.5cm,bottom=1.5cm,columnsep=1.2cm}
 
+% The paracol package lets you typeset columns of text in parallel
+\usepackage{paracol}
+
 \ifxetexorluatex
-  % If using xelatex or lualatex:
-  \setmainfont{Roboto}
+  \setmainfont{Roboto Slab}
   \setsansfont{Lato}
   \renewcommand{\familydefault}{\sfdefault}
 \else
   % If using pdflatex:
   \usepackage[rm]{roboto}
   \usepackage[defaultsans]{lato}
-  % \usepackage{sourcesanspro}
+  \usepackage{sourcesanspro}
   \renewcommand{\familydefault}{\sfdefault}
 \fi
-
 
 % --- 深邃科技蓝 ---
 \definecolor{SlateGrey}{HTML}{2E2E2E}
@@ -26,6 +30,14 @@
 \definecolor{Gunmetal}{HTML}{2C3E50} 
 % -----------------------
 
+% % --- 高级墨茶与深绿 ---
+% \definecolor{Carbon}{HTML}{333333}
+% \definecolor{DeepForest}{HTML}{1B3022} % 极深森林绿
+% \definecolor{ModernTeal}{HTML}{20635B} % 现代青绿
+% \definecolor{SageLine}{HTML}{D1D7D0} % 鼠尾草灰绿线
+% \definecolor{Gunmetal}{HTML}{2C3E50} 
+% % -----------------------
+
 \colorlet{name}{black}
 \colorlet{tagline}{MediumBlue}
 \colorlet{heading}{DarkBlue}
@@ -35,14 +47,16 @@
 \colorlet{emphasis}{SlateGrey}
 \colorlet{body}{LightGrey}
 
-\renewcommand{\namefont}{\Huge\rmfamily\mdseries}
+
+\renewcommand{\namefont}{\Huge\rmfamily\bfseries}
 \renewcommand{\personalinfofont}{\footnotesize}
 \renewcommand{\cvsectionfont}{\Large\rmfamily\mdseries}
 \renewcommand{\cvsubsectionfont}{\large\mdseries}
+\newcommand{\strong}[1]{\textcolor{Gunmetal}{\textbf{#1}}}
+
 
 \renewcommand{\cvItemMarker}{{\small\textbullet}}
 \renewcommand{\cvRatingMarker}{\faCircle}
-
 
 \begin{document}
 \name{Xu Chi}
