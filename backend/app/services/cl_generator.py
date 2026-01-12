@@ -5,19 +5,21 @@ from app.services.planner_and_solver import Planner, Solver
 from app.core.prompts import CL_PLANNER_PROMPT, CL_SOLVER_PROMPT
 from app.services.shared_resume import resume_data
 
+from app.utils.latex import escape_latex
+
 def get_cl_template():
     main_tex_file = "./latex_cl/sample.tex"
-    print("✍️ Generating CL LaTeX")
 
     with open(main_tex_file, "r", encoding="utf-8") as f:
         tex_template = f.read()
     return tex_template
 
 def wrap_cl_in_latex(letter_body: str) -> str:
+    print("✍️ Generating CL PDF")
     tex_template = get_cl_template()
     # Format for LaTeX
     formatted_paragraphs = [
-        line.strip() for line in letter_body.split("\n") if line.strip()
+        escape_latex(line.strip()) for line in letter_body.split("\n") if line.strip()
     ]
     formatted_letter = "\n\n\\vspace{0.5cm}\n\n".join(formatted_paragraphs)
     new_tex = tex_template.replace("\\coverletterbody", formatted_letter)

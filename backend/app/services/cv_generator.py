@@ -4,6 +4,8 @@ from app.core.prompts import CV_PLANNER_PROMPT, CV_SOLVER_PROMPT
 from app.services.shared_resume import resume_data
 
 
+from app.utils.latex import escape_latex
+
 def get_cv_template():
     main_tex_file = "./latex_cv/sample.tex"
     print("✍️ Generating CV LaTeX")
@@ -14,9 +16,10 @@ def get_cv_template():
 
 def wrap_cv_in_latex(summary: str) -> str:
     tex_template = get_cv_template()
+    escaped_summary = escape_latex(summary)
     tex_text_updated = re.sub(
         r"(\\cvparagraph\{)(.*?)(\})",
-        lambda m: f"{m.group(1)}{summary}{m.group(3)}",
+        lambda m: f"{m.group(1)}{escaped_summary}{m.group(3)}",
         tex_template,
         flags=re.DOTALL,
     )
