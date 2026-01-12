@@ -1,14 +1,24 @@
+import enum
 from sqlalchemy import (
     Column,
     Integer,
     String,
     Text,
     DateTime,
+    Enum as SQLEnum,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
 Base = declarative_base()
+
+
+class ApplicationStatus(str, enum.Enum):
+    archive = "archive"
+    submitted = "submitted"
+    interviewing = "interviewing"
+    offered = "offered"
+    failed = "failed"
 
 
 class Application(Base):
@@ -21,8 +31,9 @@ class Application(Base):
     title = Column(String, nullable=False)
     cv_latex = Column(Text, nullable=True)
     cl_latex = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    status = Column(SQLEnum(ApplicationStatus), default=ApplicationStatus.submitted, nullable=False)
+    comment = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
     def __repr__(self):
         return f"<Application(id={self.id}, company='{self.company}', title='{self.title}')>"

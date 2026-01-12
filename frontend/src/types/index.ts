@@ -1,3 +1,5 @@
+export type ApplicationStatus = 'archive' | 'submitted' | 'interviewing' | 'offered' | 'failed';
+
 export interface JobApplication {
   id: number;
   job_url: string;
@@ -6,8 +8,18 @@ export interface JobApplication {
   jd_text: string;
   cv_latex?: string;
   cl_latex?: string;
-  created_at: string;
+  status: ApplicationStatus;
+  comment?: string;
   updated_at: string;
+}
+
+export interface ApplicationStats {
+  total: number;
+  submitted: number;
+  interviewing: number;
+  offered: number;
+  failed: number;
+  archive: number;
 }
 
 
@@ -21,7 +33,8 @@ export interface JobExtractionResponse {
   company: string;
   title: string;
   jd_text: string;
-  created_at: string;
+  status: ApplicationStatus;
+  comment?: string;
   updated_at: string;
   warning?: string;
 }

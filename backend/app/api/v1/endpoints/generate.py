@@ -197,6 +197,7 @@ async def regenerate_cover_letter(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to regenerate cover letter: {str(e)}")
 
+
 @router.post("/{application_id}/compile_pdf/{target}")
 async def compile_pdf(
     application_id: int,
@@ -297,42 +298,3 @@ async def compile_pdf(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF compilation failed: {str(e)}")
-
-@router.get("", response_model=List[JobApplicationResponse])
-async def list_applications(
-    db: Session = Depends(get_db_dependency)
-):
-    """
-    List all applications
-    """
-    applications = db.query(Application).order_by(Application.created_at.desc()).all()
-    return applications
-
-@router.get("/{application_id}", response_model=JobApplicationResponse)
-async def get_application(
-    application_id: int,
-    db: Session = Depends(get_db_dependency)
-):
-    """
-    Get a single application by ID
-    """
-    application = db.query(Application).filter(Application.id == application_id).first()
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
-    return application
-
-@router.delete("/{application_id}")
-async def delete_application(
-    application_id: int,
-    db: Session = Depends(get_db_dependency)
-):
-    """
-    Delete an application by ID
-    """
-    application = db.query(Application).filter(Application.id == application_id).first()
-    if not application:
-        raise HTTPException(status_code=404, detail="Application not found")
-    
-    db.delete(application)
-    db.commit()
-    return {"detail": "Application deleted successfully"}

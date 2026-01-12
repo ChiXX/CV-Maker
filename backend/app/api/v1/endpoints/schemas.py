@@ -1,6 +1,14 @@
+import enum
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from datetime import datetime
+
+class ApplicationStatus(str, enum.Enum):
+    archive = "archive"
+    submitted = "submitted"
+    interviewing = "interviewing"
+    offered = "offered"
+    failed = "failed"
 
 class JobApplicationRequest(BaseModel):
     job_url: str
@@ -13,10 +21,15 @@ class JobApplicationResponse(BaseModel):
     jd_text: str
     cv_latex: Optional[str]
     cl_latex: Optional[str]
-    created_at: datetime
+    status: ApplicationStatus
+    comment: Optional[str] = None
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class JobApplicationUpdate(BaseModel):
+    status: Optional[ApplicationStatus] = None
+    comment: Optional[str] = None
 
 class JobExtractionRequest(BaseModel):
     job_url: str
@@ -27,7 +40,8 @@ class JobExtractionResponse(BaseModel):
     company: str
     title: str
     jd_text: str
-    created_at: datetime
+    status: ApplicationStatus
+    comment: Optional[str] = None
     updated_at: datetime
     warning: Optional[str] = None
 
@@ -46,6 +60,14 @@ class ClGenerationRequest(BaseModel):
 class ClGenerationResponse(BaseModel):
     raw_content: str
     plan_steps: Optional[List[str]] = None
+
+class ApplicationStats(BaseModel):
+    total: int
+    submitted: int
+    interviewing: int
+    offered: int
+    failed: int
+    archive: int
 
 class PdfCompileResponse(BaseModel):
     detail: str
