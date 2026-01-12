@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { WizardData } from '@/types';
-import { regenerateJobDetails } from '@/lib/api';
+import { regenerateJobDescription } from '@/lib/api';
+import { JobExtractionResponse } from '@/types';
 
 interface ExtractionStepProps {
   data: WizardData;
@@ -13,8 +14,8 @@ export function ExtractionStep({ data, onUpdate, onNext, onPrev }: ExtractionSte
   // 1. Regenerate Mutation
   // Used for manual actions that change data on the server
   const { mutate: handleRegenerate, isPending: isRegenerating } = useMutation({
-    mutationFn: () => regenerateJobDetails(data.application!.id),
-    onSuccess: (result) => {
+    mutationFn: () => regenerateJobDescription(data.application!.id),
+    onSuccess: (result: JobExtractionResponse) => {
       onUpdate({
         extractedData: {
           company: result.company,

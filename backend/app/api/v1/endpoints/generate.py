@@ -14,7 +14,7 @@ import re as _re
 from openai import OpenAI
 from app.db.session import get_db_dependency
 from app.db.models import Application
-from app.schemas.application import (
+from .schemas import (
     JobExtractionRequest, JobExtractionResponse,
     CvGenerationResponse, ClGenerationResponse,
     JobApplicationResponse, CompilePdfRequest
@@ -31,8 +31,8 @@ client = OpenAI(
     base_url=os.getenv("OPENAI_BASE_URL")
 )
 
-@router.post("/extract", response_model=JobExtractionResponse)
-async def extract_job_details(
+@router.post("/job_description", response_model=JobExtractionResponse)
+async def generate_job_description(
     request: JobExtractionRequest,
     db: Session = Depends(get_db_dependency)
 ):
@@ -69,8 +69,8 @@ async def extract_job_details(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to extract job details: {str(e)}")
 
-@router.put("/{application_id}/extract", response_model=JobExtractionResponse)
-async def regenerate_job_details(
+@router.put("/{application_id}/job_description", response_model=JobExtractionResponse)
+async def regenerate_job_description(
     application_id: int,
     db: Session = Depends(get_db_dependency)
 ):

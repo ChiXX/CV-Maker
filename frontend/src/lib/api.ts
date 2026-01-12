@@ -2,8 +2,8 @@ import { JobExtractionRequest, JobExtractionResponse, CvGenerationRequest, CvGen
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-export async function extractJobDetails(request: JobExtractionRequest): Promise<JobExtractionResponse> {
-  const response = await fetch(`${API_BASE_URL}/applications/extract`, {
+export async function generateJobDescription(request: JobExtractionRequest): Promise<JobExtractionResponse> {
+  const response = await fetch(`${API_BASE_URL}/generate/job_description`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -27,8 +27,8 @@ export async function extractJobDetails(request: JobExtractionRequest): Promise<
   return response.json();
 }
 
-export async function regenerateJobDetails(applicationId: number): Promise<JobExtractionResponse> {
-  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/extract`, {
+export async function regenerateJobDescription(applicationId: number): Promise<JobExtractionResponse> {
+  const response = await fetch(`${API_BASE_URL}/generate/${applicationId}/job_description`, {
     method: 'PUT',
   });
 
@@ -41,7 +41,7 @@ export async function regenerateJobDetails(applicationId: number): Promise<JobEx
 }
 
 export async function generateCv(request: CvGenerationRequest): Promise<CvGenerationResponse> {
-  const response = await fetch(`${API_BASE_URL}/applications/${request.application_id}/cv`, {
+  const response = await fetch(`${API_BASE_URL}/generate/${request.application_id}/cv`, {
     method: 'POST',
   });
 
@@ -54,7 +54,7 @@ export async function generateCv(request: CvGenerationRequest): Promise<CvGenera
 }
 
 export async function regenerateCv(applicationId: number): Promise<CvGenerationResponse> {
-  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/cv`, {
+  const response = await fetch(`${API_BASE_URL}/generate/${applicationId}/cv`, {
     method: 'PUT',
   });
 
@@ -67,7 +67,7 @@ export async function regenerateCv(applicationId: number): Promise<CvGenerationR
 }
 
 export async function generateCoverLetter(request: ClGenerationRequest): Promise<ClGenerationResponse> {
-  const response = await fetch(`${API_BASE_URL}/applications/${request.application_id}/cl`, {
+  const response = await fetch(`${API_BASE_URL}/generate/${request.application_id}/cl`, {
     method: 'POST',
   });
 
@@ -80,7 +80,7 @@ export async function generateCoverLetter(request: ClGenerationRequest): Promise
 }
 
 export async function regenerateCoverLetter(applicationId: number): Promise<ClGenerationResponse> {
-  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/cl`, {
+  const response = await fetch(`${API_BASE_URL}/generate/${applicationId}/cl`, {
     method: 'PUT',
   });
 
@@ -93,7 +93,7 @@ export async function regenerateCoverLetter(applicationId: number): Promise<ClGe
 }
 
 export async function compilePdf(applicationId: number, target: 'cv' | 'cl', rawContent?: string): Promise<Blob> {
-  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/compile_pdf/${target}`, {
+  const response = await fetch(`${API_BASE_URL}/generate/${applicationId}/compile_pdf/${target}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

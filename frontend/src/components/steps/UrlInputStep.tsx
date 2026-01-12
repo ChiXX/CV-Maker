@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { WizardData } from '@/types';
-import { extractJobDetails } from '@/lib/api';
+import { generateJobDescription } from '@/lib/api';
 import { toast } from 'sonner';
 
 interface UrlInputStepProps {
@@ -41,7 +41,7 @@ export function UrlInputStep({ data, onUpdate, onNext }: UrlInputStepProps) {
     setError('');
 
     try {
-      const result = await extractJobDetails({ job_url: url.trim() });
+      const result = await generateJobDescription({ job_url: url.trim() });
       
       if (result.warning) {
         toast.warning('Application Already Exists', {
