@@ -67,7 +67,15 @@ async def generate_job_description(
         return application
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to extract job details: {str(e)}")
+        # Instead of 500, return a response with an error/warning field
+        return JobExtractionResponse(
+            id=None,
+            job_url=request.job_url,
+            company="",
+            title="",
+            jd_text="",
+            warning=f"Could not extract details automatically: {str(e)}"
+        )
 
 @router.put("/{application_id}/job_description", response_model=JobExtractionResponse)
 async def regenerate_job_description(

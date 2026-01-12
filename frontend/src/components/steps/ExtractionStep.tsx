@@ -2,6 +2,8 @@ import { useMutation } from '@tanstack/react-query';
 import { WizardData } from '@/types';
 import { regenerateJobDescription } from '@/lib/api';
 import { JobExtractionResponse } from '@/types';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
 interface ExtractionStepProps {
   data: WizardData;
@@ -11,6 +13,7 @@ interface ExtractionStepProps {
 }
 
 export function ExtractionStep({ data, onUpdate, onNext, onPrev }: ExtractionStepProps) {
+  const router = useRouter();
   // 1. Regenerate Mutation
   // Used for manual actions that change data on the server
   const { mutate: handleRegenerate, isPending: isRegenerating } = useMutation({
@@ -22,7 +25,12 @@ export function ExtractionStep({ data, onUpdate, onNext, onPrev }: ExtractionSte
           title: result.title,
           jd_text: result.jd_text,
         },
-        application: result,
+        application: {
+          ...data.application!,
+          company: result.company,
+          title: result.title,
+          jd_text: result.jd_text,
+        },
         cvGeneration: undefined,
         clGeneration: undefined,
       });
@@ -114,6 +122,16 @@ export function ExtractionStep({ data, onUpdate, onNext, onPrev }: ExtractionSte
               className="px-8 py-3 bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 rounded-2xl font-bold hover:text-zinc-900 dark:hover:text-white hover:border-zinc-900 dark:hover:border-white transition-all disabled:opacity-50"
             >
               🔄 Regenerate
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                toast.success('Application Saved');
+                router.push('/applications');
+              }}
+              className="px-8 py-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white border border-zinc-200 dark:border-zinc-800 rounded-2xl font-bold hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all"
+            >
+              Just Save & Finish
             </button>
             <button 
               onClick={onNext} 

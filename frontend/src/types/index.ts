@@ -22,13 +22,19 @@ export interface ApplicationStats {
   archive: number;
 }
 
+export interface JobApplicationCreate {
+  job_url: string;
+  company: string;
+  title: string;
+  jd_text: string;
+}
 
 export interface JobExtractionRequest {
   job_url: string;
 }
 
 export interface JobExtractionResponse {
-  id: number;
+  id?: number;
   job_url: string;
   company: string;
   title: string;
@@ -37,6 +43,7 @@ export interface JobExtractionResponse {
   comment?: string;
   updated_at: string;
   warning?: string;
+  error?: string;
 }
 
 export interface CvGenerationRequest {

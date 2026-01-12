@@ -31,19 +31,26 @@ class JobApplicationUpdate(BaseModel):
     status: Optional[ApplicationStatus] = None
     comment: Optional[str] = None
 
-class JobExtractionRequest(BaseModel):
-    job_url: str
-
-class JobExtractionResponse(BaseModel):
-    id: int
+class JobApplicationCreate(BaseModel):
     job_url: str
     company: str
     title: str
     jd_text: str
-    status: ApplicationStatus
+
+class JobExtractionRequest(BaseModel):
+    job_url: str
+
+class JobExtractionResponse(BaseModel):
+    id: Optional[int] = None
+    job_url: str
+    company: str
+    title: str
+    jd_text: str
+    status: ApplicationStatus = ApplicationStatus.submitted
     comment: Optional[str] = None
-    updated_at: datetime
+    updated_at: datetime = datetime.utcnow()
     warning: Optional[str] = None
+    error: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

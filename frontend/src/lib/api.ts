@@ -1,6 +1,23 @@
-import { JobApplication, JobExtractionRequest, JobExtractionResponse, CvGenerationRequest, CvGenerationResponse, ClGenerationRequest, ClGenerationResponse, ApplicationStatus, ApplicationStats } from '@/types';
+import { JobApplication, JobExtractionRequest, JobExtractionResponse, CvGenerationRequest, CvGenerationResponse, ClGenerationRequest, ClGenerationResponse, ApplicationStatus, ApplicationStats, JobApplicationCreate } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+export async function createApplication(data: JobApplicationCreate): Promise<JobApplication> {
+  const response = await fetch(`${API_BASE_URL}/applications`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to create application: ${error}`);
+  }
+
+  return response.json();
+}
 
 export async function generateJobDescription(request: JobExtractionRequest): Promise<JobExtractionResponse> {
   const response = await fetch(`${API_BASE_URL}/generate/job_description`, {

@@ -6,9 +6,40 @@ from datetime import datetime
 from sqlalchemy import func
 from app.db.session import get_db_dependency
 from app.db.models import Application, ApplicationStatus
-from .schemas import JobApplicationResponse, JobApplicationUpdate, ApplicationStats
+from .schemas import JobApplicationResponse, JobApplicationUpdate, ApplicationStats, JobApplicationCreate
 
 router = APIRouter()
+
+@router.post("", response_model=JobApplicationResponse)
+async def create_application(
+    application_data: JobApplicationCreate,
+    db: Session = Depends(get_db_dependency)
+):
+    """
+    Manually create a new job application
+    """
+    # Check if URL already exists
+    existing_application = db.query(Application).filter(Application.job_url == application_data.job_url).first()
+    if existing_application:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"An application with this URL already exists (Company: {existing_application.company})"
+        )
+
+    # Create application record
+    application = Application(
+        job_url=application_data.job_url,
+        company=application_data.company,
+        title=application_data.title,
+        jd_text=application_data.jd_text,
+        status=ApplicationStatus.submitted
+    )
+
+    db.add(application)
+    db.commit()
+    db.refresh(application)
+
+    return application
 
 @router.get("/stats", response_model=ApplicationStats)
 async def get_application_stats(
