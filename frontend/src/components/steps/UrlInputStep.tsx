@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { WizardData } from '@/types';
+import { extractJobDetails } from '@/lib/api';
+import { toast } from 'sonner';
 
 interface UrlInputStepProps {
   data: WizardData;
@@ -21,7 +23,7 @@ export function UrlInputStep({ data, onUpdate, onNext }: UrlInputStepProps) {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return; // Prevent rapid double-clicks
   
@@ -37,8 +39,38 @@ export function UrlInputStep({ data, onUpdate, onNext }: UrlInputStepProps) {
   
     setIsSubmitting(true);
     setError('');
-    onUpdate({ url: url.trim() });
-    onNext();
+
+    try {
+      const result = await extractJobDetails({ job_url: url.trim() });
+      
+      if (result.warning) {
+        toast.warning('Application Already Exists', {
+          description: result.warning,
+          duration: 5000,
+        });
+        setIsSubmitting(false);
+        return; // STAY in the first step as per user request
+      }
+
+      // Success - update data and move to next step
+      onUpdate({ 
+        url: url.trim(),
+        extractedData: {
+          company: result.company,
+          title: result.title,
+          jd_text: result.jd_text,
+        },
+        application: result,
+      });
+      onNext();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to extract job details';
+      setError(msg);
+      toast.error('Extraction Failed', {
+        description: msg,
+      });
+      setIsSubmitting(false);
+    }
   };
 
   return (

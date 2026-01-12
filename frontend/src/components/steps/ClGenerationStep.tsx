@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { WizardData } from '@/types';
-import { generateCoverLetter, regenerateCoverLetter, compilePdf as compilePdfServer, getApplication } from '@/lib/api';
+import { generateCoverLetter, regenerateCoverLetter, compilePdf as compilePdfServer } from '@/lib/api';
 
 interface ClGenerationStepProps {
   data: WizardData;
@@ -22,28 +22,9 @@ interface ProcessStep {
 
 export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGenerationStepProps) {
   const queryClient = useQueryClient();
-  const [currentStep, setCurrentStep] = useState<GenerationStep>(
-    data.application?.cl_latex ? 'complete' : 'planning'
-  );
-  const [latexContent, setLatexContent] = useState<string>(data.application?.cl_latex || '');
+  const [currentStep, setCurrentStep] = useState<GenerationStep>('planning');
+  const [latexContent, setLatexContent] = useState<string>('');
   const hasSyncedRef = useRef(false);
-
-  // 0. Fetch application data to ensure we have cl_latex if it exists
-  const { data: applicationData } = useQuery({
-    queryKey: ['application', data.application?.id],
-    queryFn: () => getApplication(data.application!.id),
-    enabled: !!data.application?.id,
-    staleTime: Infinity,
-  });
-
-  // Sync application data to wizard state
-  useEffect(() => {
-    if (applicationData && applicationData.cl_latex !== data.application?.cl_latex) {
-      onUpdate({
-        application: applicationData,
-      });
-    }
-  }, [applicationData]);
 
   // 1. Initial Cover Letter Generation Query
   const { 
@@ -56,7 +37,7 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
       setCurrentStep('executing');
       return await generateCoverLetter({ application_id: data.application!.id });
     },
-    enabled: !!data.application?.id && !data.application?.cl_latex,
+    enabled: !!data.application?.id,
     staleTime: Infinity,
   });
 
@@ -89,26 +70,14 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
       return await compilePdfServer(data.application.id, 'cl', rawContent);
     },
     onSuccess: (blob) => {
-      queryClient.setQueryData(['cl-pdf', data.application?.id, data.application?.cl_latex], blob);
+      queryClient.setQueryData(['cl-pdf', data.application?.id], blob);
       setCurrentStep('complete');
     },
   });
 
-  // 4. PDF Compilation Query (for existing view)
-  const {
-    data: clPdfBlob,
-    isLoading: isPdfLoading,
-    error: pdfError
-  } = useQuery({
-    queryKey: ['cl-pdf', data.application?.id, data.application?.cl_latex],
-    queryFn: () => compilePdfServer(data.application!.id, 'cl'),
-    enabled: !!data.application?.id && !!data.application?.cl_latex,
-    staleTime: Infinity,
-  });
-
   // Sync auto-generation result to parent state
   useEffect(() => {
-    if (generationResult && generationResult.raw_content && !data.application?.cl_latex && !hasSyncedRef.current) {
+    if (generationResult && generationResult.raw_content && !hasSyncedRef.current) {
       hasSyncedRef.current = true;
       onUpdate({
         clGeneration: {
@@ -120,23 +89,9 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
       setLatexContent(generationResult.raw_content);
       setCurrentStep('editing');
     }
-  }, [generationResult, data.application?.cl_latex]);
+  }, [generationResult]);
 
-  // If cl_latex exists, ensure we're in complete state
-  useEffect(() => {
-    if (data.application?.cl_latex && currentStep !== 'complete') {
-      setCurrentStep('complete');
-    }
-  }, [data.application?.cl_latex, currentStep]);
-
-  // Transition to complete when PDF is ready
-  useEffect(() => {
-    if (clPdfBlob && currentStep === 'rendering') {
-      setCurrentStep('complete');
-    }
-  }, [clPdfBlob, currentStep]);
-
-  const activePdfBlob = clPdfBlob || compilePdfMutation.data;
+  const activePdfBlob = compilePdfMutation.data;
 
   const handleRegenerate = () => {
     if (!data.application?.id || isGenerating || regenerateClMutation.isPending) return;
@@ -159,8 +114,8 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
     compilePdfMutation.mutate(latexContent);
   };
 
-  const isLoading = isGenerating || regenerateClMutation.isPending || compilePdfMutation.isPending || isPdfLoading;
-  const error = genError?.message || regenerateClMutation.error?.message || compilePdfMutation.error?.message || (pdfError as Error)?.message;
+  const isLoading = isGenerating || regenerateClMutation.isPending || compilePdfMutation.isPending;
+  const error = genError?.message || regenerateClMutation.error?.message || compilePdfMutation.error?.message;
 
   const processSteps: ProcessStep[] = [
     { id: 'planning', label: 'Drafting Cover Letter', status: 'pending' },
@@ -196,8 +151,8 @@ export function ClGenerationStep({ data, onUpdate, onNext, onPrev }: ClGeneratio
           </p>
         </div>
 
-        {/* Generation Process Steps - only show during generation, not for existing PDFs */}
-        {!data.application?.cl_latex && (
+        {/* Generation Process Steps */}
+        {true && (
           <div className="mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Generation Process</h3>
             <div className="space-y-3">

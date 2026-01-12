@@ -23,6 +23,7 @@ export interface JobExtractionResponse {
   jd_text: string;
   created_at: string;
   updated_at: string;
+  warning?: string;
 }
 
 export interface CvGenerationRequest {

@@ -12,8 +12,16 @@ export async function extractJobDetails(request: JobExtractionRequest): Promise<
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to extract job details: ${error}`);
+    try {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || `Failed to extract job details: ${response.statusText}`);
+    } catch (e) {
+      if (e instanceof Error && e.message.includes('detail')) {
+        throw e;
+      }
+      const error = await response.text();
+      throw new Error(`Failed to extract job details: ${error}`);
+    }
   }
 
   return response.json();
@@ -99,13 +107,4 @@ export async function compilePdf(applicationId: number, target: 'cv' | 'cl', raw
   }
   
   return response.blob();
-}
-
-export async function getApplication(applicationId: number): Promise<any> {
-  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}`);
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to fetch application: ${error}`);
-  }
-  return response.json();
 }

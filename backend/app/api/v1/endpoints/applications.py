@@ -39,13 +39,15 @@ async def extract_job_details(
     """
     Extract job details from URL and create initial application record
     """
-    try:
-        # Check if URL already exists
-        existing_application = db.query(Application).filter(Application.job_url == request.job_url).first()
-        if existing_application:
-            # Return existing application instead of creating duplicate
-            return existing_application
+    # Check if URL already exists
+    existing_application = db.query(Application).filter(Application.job_url == request.job_url).first()
+    if existing_application:
+        # Return existing application with warning message
+        response_data = JobExtractionResponse.model_validate(existing_application)
+        response_data.warning = "This job application already exists. Please check your applications list."
+        return response_data
 
+    try:
         # Extract job description from URL
         jd_text, company, title = extract_jd_from_url_with_llm(client, request.job_url)
 
